@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getMedicines,
   createMedicine,
+  bulkCreateMedicines,
   getMedicineById,
   updateMedicine,
   deleteMedicine,
@@ -14,6 +15,8 @@ router.use(protect);
 router.route('/')
   .get(getMedicines)
   .post(createMedicine);
+
+router.post('/bulk', bulkCreateMedicines);
 
 router.route('/:id')
   .get(getMedicineById)

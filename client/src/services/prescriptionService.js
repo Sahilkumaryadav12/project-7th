@@ -18,3 +18,8 @@ export const deletePrescription = async (id) => {
   const res = await api.delete(`/prescriptions/${id}`);
   return res.data;
 };
+
+export const addPrescriptionMedicinesToTracker = async (prescriptionId, medicines) => {
+  const res = await api.post('/medicines/bulk', { prescriptionId, medicines });
+  return res.data;
+};

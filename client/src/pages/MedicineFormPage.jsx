@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { createMedicine, getMedicineById, updateMedicine } from '../services/medicineService';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { Pill, ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
@@ -8,6 +8,8 @@ const MedicineFormPage = () => {
   const { id } = useParams();
   const isEdit = Boolean(id);
   const navigate = useNavigate();
+  const location = useLocation();
+  const sourcePrescription = !isEdit ? location.state?.prescription : null;
 
   const [name, setName] = useState('');
   const [dosage, setDosage] = useState('');
@@ -82,6 +84,7 @@ const MedicineFormPage = () => {
       reminderTimes,
       foodInstruction,
       notes,
+      ...(sourcePrescription?._id ? { prescriptionId: sourcePrescription._id } : {}),
     };
 
     try {
@@ -118,10 +121,12 @@ const MedicineFormPage = () => {
           </div>
           <div>
             <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#fff' }}>
-              {isEdit ? 'Edit Medication' : 'Add New Medication'}
+              {isEdit ? 'Edit Medication' : sourcePrescription ? 'Add Medication from Prescription' : 'Add New Medication'}
             </h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>
-              Configure schedule and reminder timings
+              {sourcePrescription
+                ? `Enter the medication instructions exactly as written${sourcePrescription.doctorName ? ` by Dr. ${sourcePrescription.doctorName}` : ''}. A schedule will be created from the details you provide.`
+                : 'Configure schedule and reminder timings'}
             </p>
           </div>
         </div>
