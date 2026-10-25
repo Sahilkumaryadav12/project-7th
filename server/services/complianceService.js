@@ -19,12 +19,14 @@ const calculateCompliance = (logs) => {
 
   for (const log of logs) {
     // Check if scheduled date/time is in the future
-    const sDate = new Date(log.scheduledDate);
-    if (log.scheduledTime) {
-      const [hours, minutes] = log.scheduledTime.split(':').map(Number);
-      sDate.setHours(hours, minutes, 0, 0);
-    } else {
-      sDate.setHours(23, 59, 59, 999);
+    const sDate = log.scheduledAt ? new Date(log.scheduledAt) : new Date(log.scheduledDate);
+    if (!log.scheduledAt) {
+      if (log.scheduledTime) {
+        const [hours, minutes] = log.scheduledTime.split(':').map(Number);
+        sDate.setUTCHours(hours, minutes, 0, 0);
+      } else {
+        sDate.setUTCHours(23, 59, 59, 999);
+      }
     }
 
     // Ignore future doses

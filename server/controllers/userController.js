@@ -30,7 +30,7 @@ const updateProfile = async (req, res, next) => {
     }
 
     if (req.file) {
-      user.profileImage = `/uploads/${req.file.filename}`;
+      user.profileImage = `/uploads/profile/${req.file.filename}`;
     }
 
     await user.save();

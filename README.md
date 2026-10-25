@@ -1,162 +1,68 @@
-# MediTrack — Full-Stack Medication Compliance Tracker
+# MediTrack
 
-MediTrack is a production-grade full-stack web application designed for tracking medication adherence, materializing daily schedules, providing in-app/browser reminders, offering caregiver supervision, and generating downloadable PDF compliance reports.
+MediTrack is a React/Vite medication tracker with a Node.js, Express, and MongoDB API. The existing dark UI and navigation remain in place. The server stores patient data in MongoDB, issues HTTP-only JWT cookies, creates daily dose records without duplicates, and provides patient and caregiver endpoints.
 
----
+## Frontend integration map
 
-## 🌟 Key Features
+| Page / feature | API calls | Data used |
+|---|---|---|
+| Login and registration | `POST /api/auth/login`, `POST /api/auth/register`, `GET /api/auth/me`, `POST /api/auth/logout` | Session and profile |
+| Dashboard and trend chart | `GET /api/dashboard`, `GET /api/reports/weekly`, `PUT /api/medication-logs/:id` | Today's doses, counts, adherence, dose actions |
+| Medicines and medicine form/detail | `GET/POST /api/medicines`, `GET/PUT/DELETE /api/medicines/:id` | Medicine schedule, dosage, instructions, notes |
+| Today schedule | `GET /api/medication-logs?date=YYYY-MM-DD` or `GET /api/schedule/today` | Dose time, medicine, status, taken/snooze actions |
+| History | `GET /api/medication-logs?date=&medicineId=&status=` | Filtered dose history |
+| Reports | `GET /api/reports/weekly`, `/monthly`, `/daily`, `/medicine/:id` | Adherence and per-medicine summaries |
+| Prescriptions | `GET/POST /api/prescriptions`, `GET /api/prescriptions/:id`, `GET /api/prescriptions/:id/file`, `DELETE /api/prescriptions/:id` | Private prescription documents and metadata |
+| Profile | `GET /api/auth/me`, `PUT /api/users/me` | Personal details, emergency contact, profile image |
+| Settings | `GET/PUT /api/settings` | Timezone, language, theme, notification and reminder preferences |
+| In-app reminders | `GET /api/notifications`, `PATCH /api/notifications/:id/read`, `POST /api/reminders/:id/snooze` | Upcoming and missed dose notifications |
+| Caregiver portal | `/api/caregiver/*` | Accepted patient relationships, patient schedule and history |
 
-1. **Patient Portal**:
-   - Full CRUD management of active medications, dosages, frequencies, food instructions, and custom timings.
-   - Live Dashboard metrics (Weekly Compliance, Taken Today, Missed Today, Upcoming Doses).
-   - Medical Safety Disclaimer banner displayed on Dashboard and Medication details.
-   - Missed Dose Alert banner with direct link to medication details.
-   - Interactive Today Schedule with one-click actions: **Taken**, **Snooze (15m/30m)**, or **Missed**.
-   - Filterable Medication Log History by date, status, or medication.
-   - Upload & Manage Doctor Prescriptions (PDF, JPG, PNG validation).
-   - Executive Compliance Analytics with **Downloadable PDF Compliance Report**.
+The existing client services are in `client/src/services`. In development Vite proxies `/api` and `/uploads` to port 5000. Set `VITE_API_URL` to an absolute API base URL only when hosting the client and API separately.
 
-2. **Caregiver Supervision Portal**:
-   - Read-only monitoring for caregivers assigned via accepted relationships.
-   - Live adherence rates, medication list, and historical dose logs for assigned patients.
-   - Caregivers cannot create, edit, or delete patient medications or logs (enforced server-side).
-   - Invitation system allowing caregivers to request access via patient email.
+## Setup
 
-3. **Real-time Reminders & Notifications**:
-   - Native Browser Notification API integration.
-   - Client-side 30s interval checking for due/snoozed doses.
-   - In-app **ReminderCard** modal with Taken / Snooze / Dismiss options.
+Requirements: Node.js 18+, npm, and a reachable MongoDB instance.
 
-4. **Security & Data Integrity**:
-   - Single source of truth backend compliance algorithm: `(taken / (taken + missed)) * 100`.
-   - Unique compound index `(userId, medicineId, scheduledDate, scheduledTime)` preventing duplicate log materialization.
-   - Passwords hashed with `bcryptjs` (cost factor 10).
-   - JWT authentication (`Bearer <token>`) with role-based routing.
-   - Centralized Express error handler returning sanitized `{ error: message }` responses.
+1. Copy `server/.env.example` to `server/.env` and set `MONGO_URI` and a random `JWT_SECRET` of at least 32 characters.
+2. Install and start the API:
 
----
+   ```sh
+   cd server
+   npm install
+   npm run dev
+   ```
 
-## 🛠️ Tech Stack
+3. In another terminal, install and start the client:
 
-| Layer | Tech Stack |
-| :--- | :--- |
-| **Frontend** | React 18, Vite, JavaScript (ES6+), React Router DOM v6 |
-| **Styling** | Modern Plain CSS (CSS Custom Properties, Glassmorphism, Responsive Mobile Bottom Nav) |
-| **Charts** | Recharts (LineChart & BarChart) |
-| **Icons** | Lucide React |
-| **PDF Export** | jsPDF + jsPDF-AutoTable |
-| **Backend** | Node.js, Express.js |
-| **Database** | MongoDB + Mongoose (with MongoDB Memory Server fallback) |
-| **Auth** | JWT + bcryptjs |
-| **Uploads** | Multer (Saved to `server/uploads/`, served statically) |
+   ```sh
+   cd client
+   npm install
+   npm run dev
+   ```
 
----
+The API health endpoint is `GET http://localhost:5000/api/health`. Demo seed data is opt-in: run `cd server && npm run seed`. It is intended only for local development.
 
-## 🚀 Quick Start Guide
+## Environment
 
-### Prerequisites
-- **Node.js**: v18.0.0 or higher
-- **npm**: v9.0.0 or higher
+`server/.env.example` documents `PORT`, `NODE_ENV`, `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, and `CLIENT_URL`. The server will stop startup if MongoDB or the JWT secret is not configured. It does not silently fall back to an in-memory database or seed patient data.
 
-### 1. Clone & Install Dependencies
+The React client authenticates with an HTTP-only, SameSite strict cookie and does not store the JWT in local storage. Production deployments must use HTTPS and set `CLIENT_URL` to the exact client origin (comma-separated origins are supported).
 
-```bash
-# Install Server Dependencies
-cd server
-npm install
+Medication reminder times are interpreted in the user's saved IANA timezone and stored as UTC instants alongside the local date key. The missed-dose grace period defaults to 60 minutes and can be configured with `MISSED_DOSE_GRACE_MINUTES`. Prescription files are stored outside the public static directory and streamed only after an ownership check. Profile images are served from the profile-only public directory.
 
-# Install Client Dependencies
-cd ../client
-npm install
-```
+The server checks for upcoming and missed doses once per minute and persists in-app notifications. Browser alerts are generated by the existing open-page reminder component. They require browser permission and an open application tab; web push delivery while the browser is closed is not configured.
 
-### 2. Environment Variables (.env)
+## API response and ownership behavior
 
-The server utilizes `server/.env`. A default `.env` file is pre-configured:
+Endpoints require the signed-in user's session, except registration, login, and health. Every patient query scopes data by the authenticated user. Caregiver patient detail requires an accepted relationship. Medicine deletion archives the medicine so historical logs remain available. A repeated dose write is protected by a unique compound index.
 
-```env
-PORT=5000
-MONGO_URI=mongodb://127.0.0.1:27017/meditrack
-JWT_SECRET=meditrack_super_secret_jwt_key_2026_secure
-CLIENT_URL=http://localhost:5173
-```
+API errors use an `{ "error": "..." }` response for compatibility with the existing client. Success response shapes match the current client services; the dedicated `/api/schedule/today` endpoint uses `{ success, data }`.
 
-> **Note**: If a local MongoDB instance is not running on port 27017, the server will automatically spin up an embedded `mongodb-memory-server` fallback, requiring **zero extra setup** to run!
+## Tests
 
-### 3. Seed Demo Data
+Run the server tests with `cd server && npm test`. They cover health, cookie registration, authentication, duplicate registration, ownership checks, compliance, and timezone conversion. Run `cd client && npm run build` to verify the production client bundle.
 
-Populate the database with demo users, 4 realistic medicines, 14 days of compliance log history, and a sample prescription:
+## Medical notice
 
-```bash
-cd server
-npm run seed
-```
-
-### 4. Run Application
-
-Start both backend and frontend servers:
-
-```bash
-# Start Backend API (Port 5000)
-cd server
-npm run dev
-
-# In a second terminal window, start Frontend (Port 5173)
-cd client
-npm run dev
-```
-
-Access the application in your browser at: **`http://localhost:5173`**
-
----
-
-## 🔑 Demo Credentials
-
-| Role | Email | Password | Features Access |
-| :--- | :--- | :--- | :--- |
-| **Patient** | `patient@meditrack.com` | `Password123!` | Full CRUD on Medicines, Logs, Prescriptions, Analytics, PDF Export |
-| **Caregiver** | `caregiver@meditrack.com` | `Password123!` | Read-Only supervision on assigned patient Sarah Connor |
-
----
-
-## 📡 REST API Documentation
-
-### Auth Endpoints
-- `POST /api/auth/register` - Create patient or caregiver account.
-- `POST /api/auth/login` - Authenticate & obtain JWT token.
-- `GET /api/auth/me` - Fetch authenticated user profile.
-- `POST /api/auth/logout` - Logout session.
-
-### Medicine Endpoints (Patient Owned)
-- `GET /api/medicines` - List caller's medicines with per-medicine compliance %.
-- `POST /api/medicines` - Add new medication.
-- `GET /api/medicines/:id` - Single medicine details + log history.
-- `PUT /api/medicines/:id` - Update medication parameters.
-- `DELETE /api/medicines/:id` - Delete medication & cascade logs.
-
-### Medication Log Endpoints
-- `GET /api/medication-logs?date=&medicineId=&status=` - Filtered log retrieval.
-- `POST /api/medication-logs` - Materialize or upsert a dose log.
-- `PUT /api/medication-logs/:id` - Update status (`taken`, `missed`, `snoozed`).
-
-### Dashboard & Analytics Endpoints
-- `GET /api/dashboard` - Today's schedule, metrics (`takenToday`, `missedToday`, `upcoming`), weekly compliance rate.
-- `GET /api/reports/weekly` - 7-day rolling adherence trend for Recharts line chart.
-- `GET /api/reports/monthly` - 30-day overall compliance, monthly shift %, per-medicine breakdown.
-
-### Prescription Endpoints
-- `GET /api/prescriptions` - List user prescriptions.
-- `POST /api/prescriptions` - Upload prescription (multipart file, doctorName, date, notes).
-- `DELETE /api/prescriptions/:id` - Delete prescription & remove upload file.
-
-### Caregiver Supervision Endpoints
-- `GET /api/caregiver/patients` - List assigned patients + summary stats.
-- `GET /api/caregiver/patients/:patientId` - Read-only detailed patient schedule & history.
-- `POST /api/caregiver/invite` - Send supervision invite by patient email.
-- `PUT /api/caregiver/relationships/:id` - Accept/Revoke relationship status.
-
----
-
-## ⚕️ Medical Safety Constraint Notice
-
-> "MediTrack is a medication management and reminder tool. It does not replace professional medical advice. Always follow your healthcare professional's prescription."
+MediTrack supports medication tracking and reminders. It does not replace professional medical advice. Follow the instructions provided by a healthcare professional.

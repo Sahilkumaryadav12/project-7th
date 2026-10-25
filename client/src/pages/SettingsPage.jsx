@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { getSettings, updateSettings } from '../services/settingsService';
 import { Bell, ShieldCheck, Moon, Laptop, Lock } from 'lucide-react';
 
 const SettingsPage = () => {
@@ -7,11 +8,19 @@ const SettingsPage = () => {
   const [notifPermission, setNotifPermission] = useState(
     'Notification' in window ? Notification.permission : 'unsupported'
   );
+  const [preferences, setPreferences] = useState(null);
+
+  useEffect(() => {
+    getSettings().then(setPreferences).catch(() => {});
+  }, []);
 
   const requestNotifPermission = async () => {
     if ('Notification' in window) {
       const res = await Notification.requestPermission();
       setNotifPermission(res);
+      const notificationPrefs = { ...(preferences?.notifications || {}), browser: res === 'granted' };
+      const saved = await updateSettings({ notifications: notificationPrefs });
+      setPreferences(saved);
     }
   };
 
@@ -56,7 +65,7 @@ const SettingsPage = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
           <div>Account Role: <strong style={{ color: '#fff', textTransform: 'capitalize' }}>{user?.role}</strong></div>
           <div>Registered Email: <strong style={{ color: '#fff' }}>{user?.email}</strong></div>
-          <div>Authentication Standard: <strong style={{ color: 'var(--accent-teal)' }}>JWT Bearer Token + bcrypt Hashing</strong></div>
+          <div>Authentication Standard: <strong style={{ color: 'var(--accent-teal)' }}>HTTP-only JWT Cookie + bcrypt Hashing</strong></div>
         </div>
       </div>
     </div>

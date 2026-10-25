@@ -1,0 +1,18 @@
+{
+  "info": {
+    "name": "MediTrack API",
+    "description": "Local development API collection. Postman stores the session cookie in its cookie jar after registration or login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{ "key": "baseUrl", "value": "http://localhost:5000" }],
+  "item": [
+    { "name": "Health", "request": { "method": "GET", "url": "{{baseUrl}}/api/health" } },
+    { "name": "Register patient", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"name\": \"Test Patient\",\n  \"email\": \"patient@example.com\",\n  \"password\": \"SafePass123!\"\n}" }, "url": "{{baseUrl}}/api/auth/register" } },
+    { "name": "Login", "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"SafePass123!\"\n}" }, "url": "{{baseUrl}}/api/auth/login" } },
+    { "name": "Current user", "request": { "method": "GET", "url": "{{baseUrl}}/api/auth/me" } },
+    { "name": "List medicines", "request": { "method": "GET", "url": "{{baseUrl}}/api/medicines" } },
+    { "name": "Today's schedule", "request": { "method": "GET", "url": "{{baseUrl}}/api/schedule/today" } },
+    { "name": "Dashboard", "request": { "method": "GET", "url": "{{baseUrl}}/api/dashboard" } },
+    { "name": "Logout", "request": { "method": "POST", "url": "{{baseUrl}}/api/auth/logout" } }
+  ]
+}

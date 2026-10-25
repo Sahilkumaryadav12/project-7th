@@ -1,68 +1,69 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
-const User = require('./models/User');
-const { seedData } = require('./seed');
+const { startReminderScheduler } = require('./services/reminderService');
 
 // Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Database Connection & Auto Seed Check
-connectDB().then(async () => {
-  try {
-    const userCount = await User.countDocuments();
-    if (userCount === 0) {
-      console.log('[Server] Database is empty. Running initial auto-seed...');
-      await seedData(true);
-    }
-  } catch (err) {
-    console.error('[Server] Auto-seed check error:', err.message);
-  }
-});
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error('JWT_SECRET must be configured with at least 32 characters');
+}
 
 // Middleware
-const allowedOrigins = [
-  process.env.CLIENT_URL || 'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:5173',
-];
+app.disable('x-powered-by');
+app.use(helmet());
+const allowedOrigins = new Set((process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(origin => origin.trim()));
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.has(origin)) {
       callback(null, true);
     } else {
-      callback(null, true);
+      callback(new Error('Origin is not allowed by CORS'));
     }
   },
   credentials: true,
 }));
+app.use('/api', (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  const origin = req.get('Origin');
+  if (origin && !allowedOrigins.has(origin)) return res.status(403).json({ error: 'Request origin is not allowed' });
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Serve static uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads/profile', express.static(path.join(__dirname, 'uploads/profile'), { dotfiles: 'deny', index: false, maxAge: '1d' }));
+app.use('/api', rateLimit({ windowMs: 15 * 60 * 1000, limit: 300, standardHeaders: 'draft-7', legacyHeaders: false }));
+app.use('/api/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({ success: true, message: 'MediTrack API is running' });
 });
 
 // API Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/medicines', require('./routes/medicineRoutes'));
 app.use('/api/medication-logs', require('./routes/logRoutes'));
+app.use('/api/schedule', require('./routes/scheduleRoutes'));
 app.use('/api/dashboard', require('./routes/dashboardRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
 app.use('/api/prescriptions', require('./routes/prescriptionRoutes'));
 app.use('/api/caregiver', require('./routes/caregiverRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/profile', require('./routes/profileRoutes'));
+app.use('/api/settings', require('./routes/settingsRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/reminders', require('./routes/notificationRoutes'));
 
 // 404 Route handler
 app.use((req, res) => {
@@ -73,9 +74,21 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
+let server;
+if (require.main === module) {
+  connectDB().then(() => {
+    startReminderScheduler();
+    server = app.listen(PORT, () => console.log(`[MediTrack Server] Running on port ${PORT}`));
+  }).catch(err => {
+    console.error(`[Database] Startup failed: ${err.message}`);
+    process.exitCode = 1;
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`[MediTrack Server] Running on port ${PORT}`);
-});
+const shutdown = () => {
+  if (server) server.close(() => require('mongoose').connection.close(false).finally(() => process.exit(0)));
+};
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
 
 module.exports = app;

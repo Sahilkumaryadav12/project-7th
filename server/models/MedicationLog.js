@@ -21,6 +21,7 @@ const medicationLogSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  scheduledAt: { type: Date, index: true },
   status: {
     type: String,
     enum: ['upcoming', 'taken', 'missed', 'snoozed'],
@@ -38,6 +39,7 @@ const medicationLogSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  updatedAt: { type: Date, default: Date.now },
 });
 
 // Unique compound index to prevent duplicate logs for the exact same scheduled dose
@@ -45,5 +47,9 @@ medicationLogSchema.index(
   { userId: 1, medicineId: 1, scheduledDate: 1, scheduledTime: 1 },
   { unique: true }
 );
+
+medicationLogSchema.pre('save', function updateTimestamp() {
+  this.updatedAt = new Date();
+});
 
 module.exports = mongoose.model('MedicationLog', medicationLogSchema);

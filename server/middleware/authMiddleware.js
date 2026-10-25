@@ -7,13 +7,17 @@ const protect = async (req, res, next) => {
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     token = req.headers.authorization.split(' ')[1];
   }
+  if (!token && req.headers.cookie) {
+    const cookie = req.headers.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('meditrack_session='));
+    if (cookie) token = decodeURIComponent(cookie.slice('meditrack_session='.length));
+  }
 
   if (!token) {
     return res.status(401).json({ error: 'Not authorized, token missing' });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'meditrack_super_secret_jwt_key_2026_secure');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(decoded.id);
 
     if (!user) {

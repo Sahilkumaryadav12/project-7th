@@ -11,7 +11,7 @@ const TodayPage = () => {
 
   const fetchTodayLogs = async () => {
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = new Intl.DateTimeFormat('en-CA').format(new Date());
       const data = await getMedicationLogs({ date: todayStr });
       setLogs(data);
     } catch (err) {

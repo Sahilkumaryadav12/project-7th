@@ -54,7 +54,7 @@ function App() {
           </Route>
 
           {/* Fallback Catch-all Route */}
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/dashboard"  replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

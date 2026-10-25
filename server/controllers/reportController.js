@@ -1,16 +1,15 @@
 const MedicationLog = require('../models/MedicationLog');
 const Medicine = require('../models/Medicine');
 const { calculateCompliance } = require('../services/complianceService');
-const { materializeLogsForDateRange, normalizeToMidnight } = require('../services/doseGeneratorService');
+const { materializeLogsForDateRange, normalizeToMidnight, getTodayForUser } = require('../services/doseGeneratorService');
 
 const getWeeklyReport = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const now = new Date();
-    const todayMidnight = normalizeToMidnight(now);
+    const todayMidnight = await getTodayForUser(userId);
 
     const sixDaysAgo = new Date(todayMidnight);
-    sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
+    sixDaysAgo.setUTCDate(sixDaysAgo.getUTCDate() - 6);
 
     await materializeLogsForDateRange(userId, sixDaysAgo, todayMidnight);
 
@@ -19,7 +18,7 @@ const getWeeklyReport = async (req, res, next) => {
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(sixDaysAgo);
-      d.setDate(d.getDate() + i);
+      d.setUTCDate(d.getUTCDate() + i);
       const normalizedD = normalizeToMidnight(d);
 
       const logs = await MedicationLog.find({
@@ -29,7 +28,7 @@ const getWeeklyReport = async (req, res, next) => {
 
       const compliance = calculateCompliance(logs);
       days.push({
-        day: dayNames[normalizedD.getDay()],
+        day: dayNames[normalizedD.getUTCDay()],
         date: normalizedD.toISOString().split('T')[0],
         compliance,
       });
@@ -44,14 +43,13 @@ const getWeeklyReport = async (req, res, next) => {
 const getMonthlyReport = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const now = new Date();
-    const todayMidnight = normalizeToMidnight(now);
+    const todayMidnight = await getTodayForUser(userId);
 
     const thirtyDaysAgo = new Date(todayMidnight);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29);
+    thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29);
 
     const sixtyDaysAgo = new Date(todayMidnight);
-    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 59);
+    sixtyDaysAgo.setUTCDate(sixtyDaysAgo.getUTCDate() - 59);
 
     await materializeLogsForDateRange(userId, thirtyDaysAgo, todayMidnight);
 
@@ -65,7 +63,7 @@ const getMonthlyReport = async (req, res, next) => {
     // Previous 30 days logs (for percentage change calculation)
     const prev30Start = new Date(sixtyDaysAgo);
     const prev30End = new Date(thirtyDaysAgo);
-    prev30End.setDate(prev30End.getDate() - 1);
+    prev30End.setUTCDate(prev30End.getUTCDate() - 1);
 
     const prevLogs = await MedicationLog.find({
       userId,
@@ -102,7 +100,31 @@ const getMonthlyReport = async (req, res, next) => {
   }
 };
 
+const getDailyReport = async (req, res, next) => {
+  try {
+    const today = req.query.date ? normalizeToMidnight(req.query.date) : await getTodayForUser(req.user._id);
+    await materializeLogsForDateRange(req.user._id, today, today);
+    const logs = await MedicationLog.find({ userId: req.user._id, scheduledDate: today });
+    const taken = logs.filter(log => log.status === 'taken').length;
+    const missed = logs.filter(log => log.status === 'missed').length;
+    res.json({ totalScheduled: logs.length, taken, missed, upcoming: logs.filter(log => ['upcoming', 'snoozed'].includes(log.status)).length, compliance: calculateCompliance(logs), date: today.toISOString().slice(0, 10) });
+  } catch (err) { next(err); }
+};
+
+const getMedicineReport = async (req, res, next) => {
+  try {
+    const medicine = await Medicine.findOne({ _id: req.params.id, userId: req.user._id });
+    if (!medicine) return res.status(404).json({ error: 'Medicine not found' });
+    const since = normalizeToMidnight(req.query.startDate || new Date(Date.now() - 29 * 86400000));
+    const until = normalizeToMidnight(req.query.endDate || new Date());
+    const logs = await MedicationLog.find({ userId: req.user._id, medicineId: medicine._id, scheduledDate: { $gte: since, $lte: until } });
+    res.json({ medicine: { id: medicine._id, name: medicine.name }, totalScheduled: logs.length, taken: logs.filter(log => log.status === 'taken').length, missed: logs.filter(log => log.status === 'missed').length, upcoming: logs.filter(log => ['upcoming', 'snoozed'].includes(log.status)).length, compliance: calculateCompliance(logs) });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getWeeklyReport,
   getMonthlyReport,
+  getDailyReport,
+  getMedicineReport,
 };

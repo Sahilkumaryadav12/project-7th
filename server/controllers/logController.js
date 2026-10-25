@@ -1,13 +1,15 @@
 const MedicationLog = require('../models/MedicationLog');
 const Medicine = require('../models/Medicine');
-const { materializeLogsForUserDate, normalizeToMidnight } = require('../services/doseGeneratorService');
+const UserSettings = require('../models/UserSettings');
+const { localDateTimeToUtc } = require('../utils/dateUtils');
+const { materializeLogsForUserDate, normalizeToMidnight, getTodayForUser } = require('../services/doseGeneratorService');
 
 const getLogs = async (req, res, next) => {
   try {
     const { date, medicineId, status } = req.query;
     const userId = req.user._id;
 
-    const queryDate = date ? new Date(date) : new Date();
+    const queryDate = date || await getTodayForUser(userId);
     await materializeLogsForUserDate(userId, queryDate);
 
     const filter = { userId };
@@ -25,10 +27,16 @@ const getLogs = async (req, res, next) => {
       filter.status = status;
     }
 
-    const logs = await MedicationLog.find(filter)
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 25));
+    const paginated = req.query.page !== undefined || req.query.limit !== undefined;
+    let find = MedicationLog.find(filter)
       .populate('medicineId')
       .sort({ scheduledDate: -1, scheduledTime: 1 });
+    if (paginated) find = find.skip((page - 1) * limit).limit(limit);
+    const logs = await find;
 
+    if (paginated) return res.status(200).json({ data: logs, pagination: { page, limit, total: await MedicationLog.countDocuments(filter) } });
     res.status(200).json(logs);
   } catch (err) {
     next(err);
@@ -43,8 +51,12 @@ const createOrUpsertLog = async (req, res, next) => {
     if (!medicineId || !scheduledDate || !scheduledTime) {
       return res.status(400).json({ error: 'medicineId, scheduledDate, and scheduledTime are required' });
     }
+    const medicine = await Medicine.findOne({ _id: medicineId, userId, isActive: true });
+    if (!medicine) return res.status(404).json({ error: 'Medicine not found' });
 
     const normalizedDate = normalizeToMidnight(scheduledDate);
+    const settings = await UserSettings.findOne({ userId }).select('timezone').lean();
+    const scheduledAt = localDateTimeToUtc(normalizedDate.toISOString().slice(0, 10), scheduledTime, settings?.timezone || 'UTC');
 
     let takenAt = null;
     if (status === 'taken') {
@@ -58,8 +70,9 @@ const createOrUpsertLog = async (req, res, next) => {
         medicineId,
         scheduledDate: normalizedDate,
         scheduledTime,
+        scheduledAt,
         status: status || 'upcoming',
-        ...(takenAt ? { takenAt } : {}),
+        takenAt: status === 'taken' ? takenAt : null,
       },
       { upsert: true, new: true, runValidators: true }
     ).populate('medicineId');
@@ -80,14 +93,21 @@ const updateLogStatus = async (req, res, next) => {
     }
 
     if (status) {
+      if (!['taken', 'missed', 'upcoming', 'snoozed'].includes(status)) return res.status(422).json({ error: 'Invalid medication status' });
+      if (status === 'snoozed' && ![15, 30, 60].includes(Number(snoozedMinutes || 15))) return res.status(422).json({ error: 'Snooze duration must be 15, 30, or 60 minutes' });
       log.status = status;
       if (status === 'taken') {
         log.takenAt = new Date();
         log.snoozedUntil = null;
       } else if (status === 'snoozed') {
+        log.takenAt = null;
         const snoozeTime = snoozedMinutes || 15;
         log.snoozedUntil = new Date(Date.now() + snoozeTime * 60 * 1000);
       } else if (status === 'missed') {
+        log.takenAt = null;
+        log.snoozedUntil = null;
+      } else {
+        log.takenAt = null;
         log.snoozedUntil = null;
       }
     }

@@ -51,6 +51,11 @@ const medicineSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  updatedAt: { type: Date, default: Date.now },
+});
+
+medicineSchema.pre('save', function updateTimestamp() {
+  this.updatedAt = new Date();
 });
 
 module.exports = mongoose.model('Medicine', medicineSchema);

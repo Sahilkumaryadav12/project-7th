@@ -1,13 +1,13 @@
 const MedicationLog = require('../models/MedicationLog');
 const Medicine = require('../models/Medicine');
 const { calculateCompliance } = require('../services/complianceService');
-const { materializeLogsForUserDate, normalizeToMidnight } = require('../services/doseGeneratorService');
+const { materializeLogsForUserDate, normalizeToMidnight, getTodayForUser } = require('../services/doseGeneratorService');
 
 const getDashboardData = async (req, res, next) => {
   try {
     const userId = req.user._id;
     const now = new Date();
-    const todayMidnight = normalizeToMidnight(now);
+    const todayMidnight = await getTodayForUser(userId);
 
     // Materialize today's logs
     await materializeLogsForUserDate(userId, todayMidnight);
@@ -27,9 +27,10 @@ const getDashboardData = async (req, res, next) => {
     let nextInMinutes = null;
     if (upcomingLogs.length > 0) {
       const upcomingTimes = upcomingLogs.map(l => {
+        if (l.scheduledAt) return new Date(l.scheduledAt);
         const [h, m] = l.scheduledTime.split(':').map(Number);
-        const t = new Date(todayMidnight);
-        t.setHours(h, m, 0, 0);
+      const t = new Date(todayMidnight);
+        t.setUTCHours(h, m, 0, 0);
         return t;
       }).filter(t => t > now);
 
@@ -41,7 +42,7 @@ const getDashboardData = async (req, res, next) => {
 
     // Weekly compliance calculation (past 7 days including today)
     const sevenDaysAgo = new Date(todayMidnight);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
 
     const pastWeekLogs = await MedicationLog.find({
       userId,

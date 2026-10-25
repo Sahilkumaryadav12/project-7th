@@ -17,7 +17,7 @@ const MobileBottomNav = () => {
   const caregiverNav = [
     { label: 'Patients', path: '/caregiver', icon: Users },
     { label: 'Profile', path: '/profile', icon: User },
-  ];
+  ]; 
 
   const items = isCaregiver ? caregiverNav : patientNav;
 

@@ -1,11 +1,11 @@
 const Medicine = require('../models/Medicine');
 const MedicationLog = require('../models/MedicationLog');
 const { calculateCompliance } = require('../services/complianceService');
-const { materializeLogsForUserDate } = require('../services/doseGeneratorService');
+const { materializeLogsForUserDate, getTodayForUser } = require('../services/doseGeneratorService');
 
 const getMedicines = async (req, res, next) => {
   try {
-    const medicines = await Medicine.find({ userId: req.user._id }).sort({ createdAt: -1 });
+    const medicines = await Medicine.find({ userId: req.user._id, isActive: true }).sort({ createdAt: -1 });
 
     // Attach per-medicine compliance
     const medicinesWithCompliance = await Promise.all(
@@ -29,9 +29,10 @@ const createMedicine = async (req, res, next) => {
   try {
     const { name, dosage, frequency, startDate, endDate, reminderTimes, foodInstruction, notes } = req.body;
 
-    if (!name || !dosage || !frequency || !startDate) {
+    if (!name || !dosage || !frequency || !startDate || !Array.isArray(reminderTimes) || reminderTimes.length === 0) {
       return res.status(400).json({ error: 'Name, dosage, frequency, and start date are required' });
     }
+    if (reminderTimes.some(time => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) return res.status(422).json({ error: 'Reminder times must use 24-hour HH:mm format' });
 
     const medicine = await Medicine.create({
       userId: req.user._id,
@@ -40,7 +41,7 @@ const createMedicine = async (req, res, next) => {
       frequency,
       startDate,
       endDate: endDate || null,
-      reminderTimes: reminderTimes || ['08:00'],
+      reminderTimes,
       foodInstruction: foodInstruction || 'no_restriction',
       notes: notes || '',
       isActive: true,
@@ -94,6 +95,9 @@ const updateMedicine = async (req, res, next) => {
     if (isActive !== undefined) medicine.isActive = isActive;
 
     await medicine.save();
+    // Schedule changes only affect future unresolved doses; completed history stays intact.
+    const today = await getTodayForUser(req.user._id);
+    await MedicationLog.deleteMany({ userId: req.user._id, medicineId: medicine._id, scheduledDate: { $gte: today }, status: { $in: ['upcoming', 'snoozed'] } });
 
     res.status(200).json(medicine);
   } catch (err) {
@@ -108,11 +112,11 @@ const deleteMedicine = async (req, res, next) => {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    // Perform cascade delete of logs or set isActive to false
-    await MedicationLog.deleteMany({ medicineId: medicine._id });
-    await Medicine.deleteOne({ _id: medicine._id });
+    // Archive instead of deleting so historical dose records remain available.
+    medicine.isActive = false;
+    await medicine.save();
 
-    res.status(200).json({ message: 'Medicine and associated logs deleted successfully' });
+    res.status(200).json({ message: 'Medicine archived successfully' });
   } catch (err) {
     next(err);
   }

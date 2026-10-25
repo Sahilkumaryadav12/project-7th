@@ -1,13 +1,20 @@
 const Medicine = require('../models/Medicine');
 const MedicationLog = require('../models/MedicationLog');
+const UserSettings = require('../models/UserSettings');
+const { dateKeyInTimezone, localDateTimeToUtc, dateKeyToUtcMidnight } = require('../utils/dateUtils');
 
 /**
- * Normalizes a Date object to midnight local time (00:00:00.000)
+ * Schedule dates are stored as UTC date keys; reminderTimes are interpreted as local wall-clock times.
  */
 const normalizeToMidnight = (date) => {
   const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
+};
+
+const getTodayForUser = async userId => {
+  const settings = await UserSettings.findOne({ userId }).select('timezone').lean();
+  return dateKeyToUtcMidnight(dateKeyInTimezone(new Date(), settings?.timezone || 'UTC'));
 };
 
 /**
@@ -15,10 +22,16 @@ const normalizeToMidnight = (date) => {
  * and updates overdue upcoming doses to 'missed'.
  */
 const materializeLogsForUserDate = async (userId, targetDate = new Date()) => {
-  const normalizedTarget = normalizeToMidnight(targetDate);
+  const settings = await UserSettings.findOne({ userId }).select('timezone').lean();
+  const timeZone = settings?.timezone || 'UTC';
+  const dateKey = typeof targetDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(targetDate)
+    ? targetDate
+    : dateKeyInTimezone(targetDate, timeZone);
+  const normalizedTarget = dateKeyToUtcMidnight(dateKey);
   const now = new Date();
-  const currentNormalized = normalizeToMidnight(now);
+  const currentNormalized = await getTodayForUser(userId);
 
+  const graceMs = Math.max(0, Number(process.env.MISSED_DOSE_GRACE_MINUTES || 60)) * 60 * 1000;
   // Fetch all active medicines for the user
   const medicines = await Medicine.find({
     userId,
@@ -38,17 +51,14 @@ const materializeLogsForUserDate = async (userId, targetDate = new Date()) => {
       : ['08:00'];
 
     for (const timeStr of reminderTimes) {
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      
       // Calculate full timestamp of scheduled dose
-      const doseTime = new Date(normalizedTarget);
-      doseTime.setHours(hours, minutes, 0, 0);
+      const doseTime = localDateTimeToUtc(dateKey, timeStr, timeZone);
 
       // Determine initial status:
       // If targetDate is today or past date, and doseTime < now, status defaults to 'missed' if not already logged.
       // If doseTime > now, status is 'upcoming'.
       let initialStatus = 'upcoming';
-      if (doseTime < now) {
+      if (doseTime.getTime() + graceMs < now.getTime()) {
         initialStatus = 'missed';
       }
 
@@ -66,6 +76,7 @@ const materializeLogsForUserDate = async (userId, targetDate = new Date()) => {
               medicineId: med._id,
               scheduledDate: normalizedTarget,
               scheduledTime: timeStr,
+              scheduledAt: doseTime,
               status: initialStatus,
             },
           },
@@ -89,16 +100,15 @@ const materializeLogsForUserDate = async (userId, targetDate = new Date()) => {
 
   for (const log of overdueLogs) {
     const [hours, minutes] = log.scheduledTime.split(':').map(Number);
-    const logTime = new Date(log.scheduledDate);
-    logTime.setHours(hours, minutes, 0, 0);
+    const logTime = localDateTimeToUtc(dateKeyInTimezone(log.scheduledDate, 'UTC'), log.scheduledTime, timeZone);
 
     if (log.status === 'snoozed' && log.snoozedUntil) {
       // If snoozed until past time + grace period (e.g. 1 hour past snoozedUntil), flip to missed
-      if (new Date(log.snoozedUntil) < new Date(now.getTime() - 60 * 60 * 1000)) {
+      if (new Date(log.snoozedUntil) < now) {
         log.status = 'missed';
         await log.save();
       }
-    } else if (log.status === 'upcoming' && logTime < now) {
+    } else if (log.status === 'upcoming' && logTime.getTime() + graceMs < now.getTime()) {
       log.status = 'missed';
       await log.save();
     }
@@ -113,13 +123,14 @@ const materializeLogsForDateRange = async (userId, startDate, endDate) => {
   const end = new Date(endDate);
 
   while (current <= end) {
-    await materializeLogsForUserDate(userId, current);
-    current.setDate(current.getDate() + 1);
+    await materializeLogsForUserDate(userId, current.toISOString().slice(0, 10));
+    current.setUTCDate(current.getUTCDate() + 1);
   }
 };
 
 module.exports = {
   normalizeToMidnight,
+  getTodayForUser,
   materializeLogsForUserDate,
   materializeLogsForDateRange,
 };

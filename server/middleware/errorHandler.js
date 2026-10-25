@@ -1,19 +1,28 @@
 const errorHandler = (err, req, res, next) => {
-  console.error('[Error Handler]', err.stack || err.message);
-
   let statusCode = res.statusCode === 200 ? 500 : res.statusCode;
-  let message = err.message || 'Internal Server Error';
+  let message = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : (err.message || 'Internal Server Error');
 
   if (err.name === 'ValidationError') {
     statusCode = 400;
     message = Object.values(err.errors).map(val => val.message).join(', ');
   } else if (err.code === 11000) {
-    statusCode = 400;
-    message = 'Duplicate field value entered';
+    statusCode = 409;
+    message = 'A record with this value already exists';
   } else if (err.name === 'CastError') {
     statusCode = 400;
-    message = 'Resource not found / invalid ID format';
+    message = 'Invalid resource identifier';
+  } else if (err.name === 'MulterError' || err.code === 'LIMIT_FILE_SIZE') {
+    statusCode = 400;
+    message = err.code === 'LIMIT_FILE_SIZE' ? 'Uploaded file exceeds the 5 MB limit' : 'Invalid uploaded file';
+  } else if (err.message && err.message.startsWith('Invalid file type')) {
+    statusCode = 422;
+    message = err.message;
+  } else if (err.message === 'Origin is not allowed by CORS') {
+    statusCode = 403;
+    message = 'Request origin is not allowed';
   }
+
+  if (statusCode >= 500) console.error('[API] Request failed', { method: req.method, path: req.path, error: err.name || 'Error' });
 
   res.status(statusCode).json({
     error: message,

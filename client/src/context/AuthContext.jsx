@@ -2,66 +2,59 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext();
+const syncTimezone = () => {
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (timezone) return api.put('/settings', { timezone }).catch(() => {});
+  return Promise.resolve();
+};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
     const savedUser = localStorage.getItem('meditrack_user');
     return savedUser ? JSON.parse(savedUser) : null;
   });
-  const [token, setToken] = useState(() => localStorage.getItem('meditrack_token'));
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    localStorage.removeItem('meditrack_token');
     const verifyUser = async () => {
-      if (token) {
-        try {
-          const res = await api.get('/auth/me');
-          setUser(res.data.user);
-          localStorage.setItem('meditrack_user', JSON.stringify(res.data.user));
-        } catch (err) {
-          console.error('[AuthContext] Auth check failed:', err);
-          logout();
-        }
-      }
+      try {
+        const res = await api.get('/auth/me');
+        setUser(res.data.user);
+        localStorage.setItem('meditrack_user', JSON.stringify(res.data.user));
+        await syncTimezone();
+      } catch { setUser(null); localStorage.removeItem('meditrack_user'); }
       setLoading(false);
     };
 
     verifyUser();
-  }, [token]);
+  }, []);
 
   const login = async (email, password, rememberMe = true) => {
     const res = await api.post('/auth/login', { email, password, rememberMe });
-    const { user: userData, token: userToken } = res.data;
-    
-    setToken(userToken);
+    const { user: userData } = res.data;
     setUser(userData);
-    localStorage.setItem('meditrack_token', userToken);
     localStorage.setItem('meditrack_user', JSON.stringify(userData));
+    await syncTimezone();
     return userData;
   };
 
   const register = async (userData) => {
     const res = await api.post('/auth/register', userData);
-    const { user: newUserData, token: userToken } = res.data;
-
-    setToken(userToken);
+    const { user: newUserData } = res.data;
     setUser(newUserData);
-    localStorage.setItem('meditrack_token', userToken);
     localStorage.setItem('meditrack_user', JSON.stringify(newUserData));
+    await syncTimezone();
     return newUserData;
   };
 
   const logout = async () => {
     try {
-      if (token) {
-        await api.post('/auth/logout');
-      }
+      await api.post('/auth/logout');
     } catch (e) {
       // Ignore logout API failure
     } finally {
-      setToken(null);
       setUser(null);
-      localStorage.removeItem('meditrack_token');
       localStorage.removeItem('meditrack_user');
     }
   };
@@ -75,7 +68,6 @@ export const AuthProvider = ({ children }) => {
     <AuthContext.Provider
       value={{
         user,
-        token,
         loading,
         login,
         register,
