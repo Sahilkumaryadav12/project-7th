@@ -4,7 +4,7 @@ import ComplianceCard from '../components/ComplianceCard';
 import ComplianceChart from '../components/ComplianceChart';
 import AdherenceBarChart from '../components/AdherenceBarChart';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { Download, BarChart3, TrendingUp, Award, Calendar } from 'lucide-react';
+import { Download, TrendingUp, RotateCw } from 'lucide-react';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
@@ -12,24 +12,43 @@ const ReportsPage = () => {
   const [weeklyData, setWeeklyData] = useState([]);
   const [monthlyData, setMonthlyData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const fetchReports = async () => {
-      try {
-        const [wRes, mRes] = await Promise.all([
-          getWeeklyReport(),
-          getMonthlyReport(),
-        ]);
-        setWeeklyData(wRes.days || []);
-        setMonthlyData(mRes);
-      } catch (err) {
-        console.error('[ReportsPage] Error fetching reports:', err);
-      } finally {
-        setLoading(false);
+      setLoading(true);
+      setLoadError('');
+      const [weeklyResult, monthlyResult] = await Promise.allSettled([
+        getWeeklyReport(),
+        getMonthlyReport(),
+      ]);
+
+      if (weeklyResult.status === 'fulfilled') setWeeklyData(weeklyResult.value.days || []);
+      else {
+        setWeeklyData([]);
+        console.error('[ReportsPage] Error fetching weekly report:', weeklyResult.reason);
       }
+
+      if (monthlyResult.status === 'fulfilled') setMonthlyData(monthlyResult.value);
+      else {
+        setMonthlyData(null);
+        console.error('[ReportsPage] Error fetching monthly report:', monthlyResult.reason);
+      }
+
+      const failures = [weeklyResult, monthlyResult]
+        .filter(result => result.status === 'rejected')
+        .map(result => result.reason?.response?.data?.error || result.reason?.message)
+        .filter(Boolean);
+      if (failures.length) {
+        setLoadError(failures.length === 2
+          ? `Reports could not be loaded. ${failures[0]}`
+          : `Some report data could not be loaded. ${failures[0]}`);
+      }
+      setLoading(false);
     };
     fetchReports();
-  }, []);
+  }, [reloadKey]);
 
   const handleExportPDF = () => {
     if (!monthlyData) return;
@@ -88,14 +107,23 @@ const ReportsPage = () => {
           <h1 className="page-title">Compliance Analytics & Reports</h1>
           <p className="page-subtitle">Deep dive into medication adherence patterns and monthly progress</p>
         </div>
-        <button onClick={handleExportPDF} className="btn btn-primary">
+        <button onClick={handleExportPDF} className="btn btn-primary" disabled={!monthlyData}>
           <Download size={18} /> Export PDF Report
         </button>
       </div>
 
+      {loadError && (
+        <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', background: 'rgba(244, 63, 94, 0.12)', border: '1px solid rgba(244, 63, 94, 0.3)', color: '#fecdd3', padding: '0.9rem 1rem', borderRadius: 'var(--radius-md)', marginBottom: '1.25rem' }}>
+          <span>{loadError}</span>
+          <button type="button" onClick={() => setReloadKey(key => key + 1)} disabled={loading} className="btn btn-secondary btn-sm">
+            <RotateCw size={14} /> Retry
+          </button>
+        </div>
+      )}
+
       {/* Overview Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', marginBottom: '1.75rem' }}>
-        <ComplianceCard percentage={monthlyData?.overallCompliance || 100} title="30-Day Overall Adherence" />
+        <ComplianceCard percentage={monthlyData?.overallCompliance ?? 100} title="30-Day Overall Adherence" />
 
         <div className="glass-card" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600 }}>Monthly Trend Shift</span>
@@ -103,11 +131,11 @@ const ReportsPage = () => {
             <span style={{
               fontSize: '2.25rem',
               fontWeight: 800,
-              color: (monthlyData?.monthlyChangePercent || 0) >= 0 ? '#10b981' : '#f43f5e',
+              color: (monthlyData?.monthlyChangePercent ?? 0) >= 0 ? '#10b981' : '#f43f5e',
             }}>
-              {(monthlyData?.monthlyChangePercent || 0) >= 0 ? `+${monthlyData?.monthlyChangePercent}%` : `${monthlyData?.monthlyChangePercent}%`}
+              {(monthlyData?.monthlyChangePercent ?? 0) >= 0 ? `+${monthlyData?.monthlyChangePercent ?? 0}%` : `${monthlyData?.monthlyChangePercent}%`}
             </span>
-            <TrendingUp size={20} color={(monthlyData?.monthlyChangePercent || 0) >= 0 ? '#10b981' : '#f43f5e'} />
+            <TrendingUp size={20} color={(monthlyData?.monthlyChangePercent ?? 0) >= 0 ? '#10b981' : '#f43f5e'} />
           </div>
           <p style={{ fontSize: '0.775rem', color: 'var(--text-subtle)' }}>Compared to preceding 30-day window</p>
         </div>
@@ -157,6 +185,13 @@ const ReportsPage = () => {
                   </td>
                 </tr>
               ))}
+              {perMed.length === 0 && (
+                <tr>
+                  <td colSpan="4" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    Add a medicine to your tracker to start building adherence reports.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
