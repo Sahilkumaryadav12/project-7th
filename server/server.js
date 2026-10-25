@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const path = require('path');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const { stopLocalMongo } = connectDB;
 const errorHandler = require('./middleware/errorHandler');
 const { startReminderScheduler } = require('./services/reminderService');
 
@@ -86,7 +87,11 @@ if (require.main === module) {
 }
 
 const shutdown = () => {
-  if (server) server.close(() => require('mongoose').connection.close(false).finally(() => process.exit(0)));
+  if (server) server.close(async () => {
+    await require('mongoose').connection.close(false);
+    await stopLocalMongo();
+    process.exit(0);
+  });
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

@@ -142,12 +142,17 @@ const RegisterPage = () => {
             <input
               type="password"
               className="form-input"
-              placeholder="Minimum 6 characters"
+              placeholder="Create a strong password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}"
+              title="Use at least 8 characters, including uppercase and lowercase letters, a number, and a symbol."
             />
+            <small style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+              Use at least 8 characters with uppercase and lowercase letters, a number, and a symbol.
+            </small>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>

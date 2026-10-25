@@ -138,14 +138,6 @@ const LoginPage = () => {
           </Link>
         </div>
 
-        {/* Demo Credentials Box */}
-        <div style={{ marginTop: '1.75rem', padding: '1rem', background: 'rgba(0, 0, 0, 0.25)', borderRadius: 'var(--radius-md)', border: '1px border var(--border-color)', fontSize: '0.8rem' }}>
-          <p style={{ color: 'var(--accent-teal)', fontWeight: 700, marginBottom: '0.35rem' }}>Demo Accounts (Seeded):</p>
-          <div style={{ color: 'var(--text-muted)' }}>
-            <div>Patient: <code>patient@meditrack.com</code> / <code>Password123!</code></div>
-            <div>Caregiver: <code>caregiver@meditrack.com</code> / <code>Password123!</code></div>
-          </div>
-        </div>
       </div>
     </div>
   );

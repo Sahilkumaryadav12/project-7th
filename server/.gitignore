@@ -3,4 +3,6 @@ node_modules/
 *.log
 uploads/**
 !uploads/.gitkeep
+data/**
+!data/.gitkeep
 coverage/

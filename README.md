@@ -45,7 +45,7 @@ The API health endpoint is `GET http://localhost:5000/api/health`. Demo seed dat
 
 ## Environment
 
-`server/.env.example` documents `PORT`, `NODE_ENV`, `MONGO_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, and `CLIENT_URL`. The server will stop startup if MongoDB or the JWT secret is not configured. It does not silently fall back to an in-memory database or seed patient data.
+`server/.env.example` documents `PORT`, `NODE_ENV`, `MONGO_URI`, `ALLOW_LOCAL_MONGODB_FALLBACK`, `JWT_SECRET`, `JWT_EXPIRES_IN`, and `CLIENT_URL`. In development, if configured MongoDB is unreachable, the server can start a local MongoDB process and store its data under `server/data/mongodb`; registered accounts then survive API restarts. Set `ALLOW_LOCAL_MONGODB_FALLBACK=false` to require the configured database. Production always requires the configured MongoDB URI. The server never auto-seeds patient data.
 
 The React client authenticates with an HTTP-only, SameSite strict cookie and does not store the JWT in local storage. Production deployments must use HTTPS and set `CLIENT_URL` to the exact client origin (comma-separated origins are supported).
 
