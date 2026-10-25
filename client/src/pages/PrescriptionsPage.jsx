@@ -110,7 +110,10 @@ const PrescriptionsPage = () => {
       }
     } catch (scanError) {
       console.error('[PrescriptionsPage] Prescription text extraction failed:', scanError);
-      setScanNotice('The file was uploaded, but automatic reading failed. You can still add medicines manually from the prescription card.');
+      const reason = scanError instanceof Error && scanError.message
+        ? ` (${scanError.message.slice(0, 180)})`
+        : '';
+      setScanNotice(`The prescription was uploaded, but automatic reading failed${reason}. Open its card to add medicines manually.`);
     } finally {
       setOcrStatus('');
       setSubmitting(false);

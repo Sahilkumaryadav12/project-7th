@@ -1,4 +1,32 @@
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
+import tesseractCoreUrl from 'tesseract.js-core/tesseract-core-lstm.wasm.js?url';
+import englishDataUrl from '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz?url';
+
+let englishDataPromise;
+
+const getEnglishData = async () => {
+  if (!englishDataPromise) {
+    englishDataPromise = fetch(englishDataUrl).then(async response => {
+      if (!response.ok) throw new Error('Could not load the built-in English OCR data. Refresh the page and try again.');
+      return new Uint8Array(await response.arrayBuffer());
+    }).catch(error => {
+      englishDataPromise = undefined;
+      throw error;
+    });
+  }
+  return englishDataPromise;
+};
+
+const createPrescriptionOcrWorker = async logger => {
+  const { createWorker } = await import('tesseract.js');
+  const data = await getEnglishData();
+  return createWorker([{ code: 'eng', data }], 1, {
+    workerPath: tesseractWorkerUrl,
+    corePath: tesseractCoreUrl,
+    logger,
+  });
+};
 
 const dosagePattern = /\b\d+(?:[.,]\d+)?\s*(?:mcg|μg|mg|g|ml|mL|iu|units?)\b/i;
 const medicineFormPattern = /\b(?:tablet|tablets|tab\.?|capsule|capsules|cap\.?|syrup|suspension|injection|inj\.?|drops?|puff|puffs|cream|ointment)\b/i;
@@ -119,11 +147,12 @@ export const parsePrescriptionMedicines = (rawText) => {
 };
 
 export const readPrescription = async (file, onProgress = () => {}) => {
-  if (file.type.startsWith('image/')) {
-    const { createWorker } = await import('tesseract.js');
-    const worker = await createWorker('eng', 1, {
-      logger: message => onProgress({ step: message.status, progress: message.progress || 0 }),
-    });
+  const fileName = file.name?.toLowerCase() || '';
+  const isImage = file.type.startsWith('image/') || /\.(?:jpe?g|png)$/.test(fileName);
+  const isPdf = file.type === 'application/pdf' || fileName.endsWith('.pdf');
+
+  if (isImage) {
+    const worker = await createPrescriptionOcrWorker(message => onProgress({ step: message.status, progress: message.progress || 0 }));
     try {
       const { data } = await worker.recognize(file);
       return { text: data.text || '', candidates: parsePrescriptionMedicines(data.text || '') };
@@ -132,7 +161,7 @@ export const readPrescription = async (file, onProgress = () => {}) => {
     }
   }
 
-  if (file.type !== 'application/pdf') throw new Error('Please choose a PDF, JPG, or PNG prescription.');
+  if (!isPdf) throw new Error('Please choose a PDF, JPG, or PNG prescription.');
 
   const pdfjs = await import('pdfjs-dist');
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
@@ -149,10 +178,7 @@ export const readPrescription = async (file, onProgress = () => {}) => {
 
       if (pageText.length < 24) {
         if (!worker) {
-          const { createWorker } = await import('tesseract.js');
-          worker = await createWorker('eng', 1, {
-            logger: message => onProgress({ step: `Scanning page ${pageNumber} of ${document.numPages}`, progress: ((pageNumber - 1) + (message.progress || 0)) / document.numPages }),
-          });
+          worker = await createPrescriptionOcrWorker(message => onProgress({ step: `Scanning page ${pageNumber} of ${document.numPages}`, progress: ((pageNumber - 1) + (message.progress || 0)) / document.numPages }));
         }
         const viewport = page.getViewport({ scale: 1.8 });
         const canvas = window.document.createElement('canvas');
