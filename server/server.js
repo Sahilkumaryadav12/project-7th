@@ -20,12 +20,20 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 
 // Middleware
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 app.use(helmet());
-const allowedOrigins = new Set((process.env.CLIENT_URL || 'http://localhost:5173').split(',').map(origin => origin.trim()));
+
+const cleanOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map(origin => origin.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+const allowedOrigins = new Set(cleanOrigins);
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.has(origin)) {
+    if (!origin) return callback(null, true);
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    if (allowedOrigins.has(cleanOrigin)) {
       callback(null, true);
     } else {
       callback(new Error('Origin is not allowed by CORS'));
@@ -33,10 +41,16 @@ app.use(cors({
   },
   credentials: true,
 }));
+
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   const origin = req.get('Origin');
-  if (origin && !allowedOrigins.has(origin)) return res.status(403).json({ error: 'Request origin is not allowed' });
+  if (origin) {
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    if (!allowedOrigins.has(cleanOrigin)) {
+      return res.status(403).json({ error: 'Request origin is not allowed' });
+    }
+  }
   next();
 });
 

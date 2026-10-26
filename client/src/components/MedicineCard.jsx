@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Pill, Clock, Utensils, Edit, Trash2, Award } from 'lucide-react';
+import { Pill, Clock, Utensils, Edit, Trash2, Award, FileText } from 'lucide-react';
 
 const foodInstructionLabels = {
   before_food: 'Take Before Food',
@@ -61,6 +61,41 @@ const MedicineCard = ({ medicine, onDelete, readOnly = false }) => {
         </div>
       </div>
 
+      {medicine.prescription && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.4rem',
+          background: 'rgba(6, 182, 212, 0.1)',
+          border: '1px solid rgba(6, 182, 212, 0.25)',
+          color: 'var(--accent-cyan)',
+          padding: '0.4rem 0.65rem',
+          borderRadius: 'var(--radius-md)',
+          fontSize: '0.8rem',
+          fontWeight: 600,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', minWidth: 0, flex: '1 1 auto' }}>
+            <FileText size={14} style={{ flexShrink: 0 }} />
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              Prescription: {medicine.prescription.doctorName ? `Dr. ${medicine.prescription.doctorName}` : 'Document'}
+            </span>
+          </div>
+          {medicine.prescription.fileUrl && (
+            <a
+              href={medicine.prescription.fileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'var(--accent-teal)', textDecoration: 'underline', fontSize: '0.75rem', flexShrink: 0 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              View Document
+            </a>
+          )}
+        </div>
+      )}
+
       {medicine.notes && (
         <p style={{ fontSize: '0.8rem', color: 'var(--text-subtle)', fontStyle: 'italic', background: 'rgba(0,0,0,0.2)', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
           "{medicine.notes}"
@@ -68,7 +103,7 @@ const MedicineCard = ({ medicine, onDelete, readOnly = false }) => {
       )}
 
       {!readOnly && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: '0.5rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)' }}>
           <Link to={`/medicines/${medicine._id}`} className="btn btn-secondary btn-sm">
             <Edit size={14} /> Edit
           </Link>

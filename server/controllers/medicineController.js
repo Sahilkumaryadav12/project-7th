@@ -6,15 +6,24 @@ const { materializeLogsForUserDate, getTodayForUser } = require('../services/dos
 
 const getMedicines = async (req, res, next) => {
   try {
-    const medicines = await Medicine.find({ userId: req.user._id, isActive: true }).sort({ createdAt: -1 });
+    const medicines = await Medicine.find({ userId: req.user._id, isActive: true })
+      .populate('prescriptionId', 'doctorName prescriptionDate fileUrl fileType notes')
+      .sort({ createdAt: -1 });
 
-    // Attach per-medicine compliance
+    // Attach per-medicine compliance and formatted prescription metadata
     const medicinesWithCompliance = await Promise.all(
       medicines.map(async (med) => {
         const logs = await MedicationLog.find({ userId: req.user._id, medicineId: med._id });
         const compliance = calculateCompliance(logs);
+        const medObj = med.toObject();
+        if (medObj.prescriptionId && typeof medObj.prescriptionId === 'object' && medObj.prescriptionId._id) {
+          medObj.prescription = {
+            ...medObj.prescriptionId,
+            fileUrl: `/api/prescriptions/${medObj.prescriptionId._id}/file`,
+          };
+        }
         return {
-          ...med.toObject(),
+          ...medObj,
           compliance,
         };
       })
@@ -72,47 +81,74 @@ const bulkCreateMedicines = async (req, res, next) => {
 
     const prescription = await Prescription.findOne({ _id: prescriptionId, userId: req.user._id }).select('_id');
     if (!prescription) return res.status(404).json({ error: 'Prescription not found' });
-    if (await Medicine.exists({ userId: req.user._id, prescriptionId })) {
-      return res.status(409).json({ error: 'Medicines from this prescription have already been added to the tracker' });
-    }
 
     const allowedFrequencies = ['once_daily', 'twice_daily', 'thrice_daily', 'four_times_daily', 'custom'];
     const expectedReminderCounts = { once_daily: 1, twice_daily: 2, thrice_daily: 3, four_times_daily: 4 };
-    for (const [index, item] of medicines.entries()) {
-      if (!item.name?.trim() || !item.dosage?.trim() || !allowedFrequencies.includes(item.frequency) || !item.startDate || !Array.isArray(item.reminderTimes) || item.reminderTimes.length === 0) {
-        return res.status(422).json({ error: `Medication ${index + 1} needs a name, dosage, frequency, start date, and at least one reminder time` });
+
+    const processedMedicines = [];
+    for (const [index, rawItem] of medicines.entries()) {
+      if (!rawItem.name?.trim() || !rawItem.dosage?.trim() || !rawItem.startDate) {
+        return res.status(422).json({ error: `Medication ${index + 1} needs a name, dosage, and start date` });
       }
-      if (item.reminderTimes.some(time => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) {
-        return res.status(422).json({ error: `Medication ${index + 1} has an invalid reminder time` });
+
+      // Normalize reminder times (auto-pad e.g. 8:00 -> 08:00)
+      let reminderTimes = Array.isArray(rawItem.reminderTimes)
+        ? rawItem.reminderTimes.map(time => {
+            const trimmed = String(time).trim();
+            return /^\d:[0-5]\d$/.test(trimmed) ? `0${trimmed}` : trimmed;
+          }).filter(Boolean)
+        : [];
+
+      if (reminderTimes.length === 0) reminderTimes = ['08:00'];
+
+      if (reminderTimes.some(time => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time))) {
+        return res.status(422).json({ error: `Medication ${index + 1} has an invalid reminder time. Use HH:mm format (e.g. 08:00)` });
       }
-      if (Number.isNaN(new Date(item.startDate).getTime()) || (item.endDate && Number.isNaN(new Date(item.endDate).getTime()))) {
+
+      let frequency = rawItem.frequency;
+      if (!allowedFrequencies.includes(frequency)) frequency = 'once_daily';
+
+      // If user selected standard frequency but provided different number of times, adjust to custom or default
+      if (expectedReminderCounts[frequency] && reminderTimes.length !== expectedReminderCounts[frequency]) {
+        if (reminderTimes.length > 0) {
+          frequency = 'custom';
+        }
+      }
+
+      if (Number.isNaN(new Date(rawItem.startDate).getTime()) || (rawItem.endDate && Number.isNaN(new Date(rawItem.endDate).getTime()))) {
         return res.status(422).json({ error: `Medication ${index + 1} has an invalid date` });
       }
-      if (item.endDate && item.endDate < item.startDate) {
+      if (rawItem.endDate && rawItem.endDate < rawItem.startDate) {
         return res.status(422).json({ error: `Medication ${index + 1} ends before it starts` });
       }
-      if (expectedReminderCounts[item.frequency] && item.reminderTimes.length !== expectedReminderCounts[item.frequency]) {
-        return res.status(422).json({ error: `Medication ${index + 1} needs ${expectedReminderCounts[item.frequency]} reminder time(s) for the selected frequency` });
+
+      // Check if medicine with this name is already active for this prescription
+      const alreadyExists = await Medicine.findOne({
+        userId: req.user._id,
+        prescriptionId,
+        name: new RegExp(`^${rawItem.name.trim()}$`, 'i'),
+        isActive: true,
+      });
+      if (alreadyExists) {
+        return res.status(409).json({ error: `Medication "${rawItem.name.trim()}" is already tracked for this prescription` });
       }
-      if (new Set(item.reminderTimes).size !== item.reminderTimes.length) {
-        return res.status(422).json({ error: `Medication ${index + 1} has duplicate reminder times` });
-      }
+
+      processedMedicines.push({
+        userId: req.user._id,
+        prescriptionId,
+        name: rawItem.name.trim(),
+        dosage: rawItem.dosage.trim(),
+        frequency,
+        startDate: rawItem.startDate,
+        endDate: rawItem.endDate || null,
+        reminderTimes: [...new Set(reminderTimes)],
+        foodInstruction: rawItem.foodInstruction || 'no_restriction',
+        notes: rawItem.notes || '',
+        isActive: true,
+      });
     }
 
-    const createdMedicines = await Medicine.insertMany(medicines.map(item => ({
-      userId: req.user._id,
-      prescriptionId,
-      name: item.name.trim(),
-      dosage: item.dosage.trim(),
-      frequency: item.frequency,
-      startDate: item.startDate,
-      endDate: item.endDate || null,
-      reminderTimes: item.reminderTimes,
-      foodInstruction: item.foodInstruction || 'no_restriction',
-      notes: item.notes || '',
-      isActive: true,
-    })));
-
+    const createdMedicines = await Medicine.insertMany(processedMedicines);
     await materializeLogsForUserDate(req.user._id, new Date());
     res.status(201).json(createdMedicines);
   } catch (err) {
@@ -122,16 +158,24 @@ const bulkCreateMedicines = async (req, res, next) => {
 
 const getMedicineById = async (req, res, next) => {
   try {
-    const medicine = await Medicine.findOne({ _id: req.params.id, userId: req.user._id });
+    const medicine = await Medicine.findOne({ _id: req.params.id, userId: req.user._id })
+      .populate('prescriptionId', 'doctorName prescriptionDate fileUrl fileType notes');
     if (!medicine) {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
     const logs = await MedicationLog.find({ userId: req.user._id, medicineId: medicine._id });
     const compliance = calculateCompliance(logs);
+    const medObj = medicine.toObject();
+    if (medObj.prescriptionId && typeof medObj.prescriptionId === 'object' && medObj.prescriptionId._id) {
+      medObj.prescription = {
+        ...medObj.prescriptionId,
+        fileUrl: `/api/prescriptions/${medObj.prescriptionId._id}/file`,
+      };
+    }
 
     res.status(200).json({
-      ...medicine.toObject(),
+      ...medObj,
       compliance,
     });
   } catch (err) {
@@ -146,7 +190,7 @@ const updateMedicine = async (req, res, next) => {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    const { name, dosage, frequency, startDate, endDate, reminderTimes, foodInstruction, notes, isActive } = req.body;
+    const { name, dosage, frequency, startDate, endDate, reminderTimes, foodInstruction, notes, isActive, prescriptionId } = req.body;
 
     if (name !== undefined) medicine.name = name;
     if (dosage !== undefined) medicine.dosage = dosage;
@@ -157,6 +201,7 @@ const updateMedicine = async (req, res, next) => {
     if (foodInstruction !== undefined) medicine.foodInstruction = foodInstruction;
     if (notes !== undefined) medicine.notes = notes;
     if (isActive !== undefined) medicine.isActive = isActive;
+    if (prescriptionId !== undefined) medicine.prescriptionId = prescriptionId || null;
 
     await medicine.save();
     // Schedule changes only affect future unresolved doses; completed history stays intact.

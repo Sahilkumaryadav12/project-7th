@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { createMedicine, getMedicineById, updateMedicine } from '../services/medicineService';
+import { getPrescriptions } from '../services/prescriptionService';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { Pill, ArrowLeft, Plus, Trash2, Save } from 'lucide-react';
+import { Pill, ArrowLeft, Plus, Trash2, Save, FileText } from 'lucide-react';
 
 const MedicineFormPage = () => {
   const { id } = useParams();
@@ -18,33 +19,41 @@ const MedicineFormPage = () => {
   const [endDate, setEndDate] = useState('');
   const [reminderTimes, setReminderTimes] = useState(['08:00']);
   const [foodInstruction, setFoodInstruction] = useState('no_restriction');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(sourcePrescription?.notes ? `Prescription note: ${sourcePrescription.notes}` : '');
+  const [prescriptions, setPrescriptions] = useState([]);
+  const [selectedPrescriptionId, setSelectedPrescriptionId] = useState(sourcePrescription?._id || '');
   
-  const [loading, setLoading] = useState(isEdit);
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (isEdit) {
-      const fetchMed = async () => {
-        try {
-          const data = await getMedicineById(id);
-          setName(data.name);
-          setDosage(data.dosage);
-          setFrequency(data.frequency);
-          setStartDate(data.startDate ? new Date(data.startDate).toISOString().split('T')[0] : '');
-          setEndDate(data.endDate ? new Date(data.endDate).toISOString().split('T')[0] : '');
-          setReminderTimes(data.reminderTimes || ['08:00']);
-          setFoodInstruction(data.foodInstruction || 'no_restriction');
-          setNotes(data.notes || '');
-        } catch (err) {
-          setError('Failed to fetch medicine details');
-        } finally {
-          setLoading(false);
+    const initData = async () => {
+      try {
+        const [prescriptionsList, medData] = await Promise.all([
+          getPrescriptions().catch(() => []),
+          isEdit ? getMedicineById(id) : Promise.resolve(null),
+        ]);
+        setPrescriptions(prescriptionsList || []);
+
+        if (medData) {
+          setName(medData.name || '');
+          setDosage(medData.dosage || '');
+          setFrequency(medData.frequency || 'once_daily');
+          setStartDate(medData.startDate ? new Date(medData.startDate).toISOString().split('T')[0] : '');
+          setEndDate(medData.endDate ? new Date(medData.endDate).toISOString().split('T')[0] : '');
+          setReminderTimes(medData.reminderTimes || ['08:00']);
+          setFoodInstruction(medData.foodInstruction || 'no_restriction');
+          setNotes(medData.notes || '');
+          setSelectedPrescriptionId(medData.prescriptionId?._id || medData.prescriptionId || medData.prescription?._id || '');
         }
-      };
-      fetchMed();
-    }
+      } catch (err) {
+        setError('Failed to fetch medication details');
+      } finally {
+        setLoading(false);
+      }
+    };
+    initData();
   }, [id, isEdit]);
 
   const handleFrequencyChange = (freq) => {
@@ -84,7 +93,7 @@ const MedicineFormPage = () => {
       reminderTimes,
       foodInstruction,
       notes,
-      ...(sourcePrescription?._id ? { prescriptionId: sourcePrescription._id } : {}),
+      prescriptionId: selectedPrescriptionId || null,
     };
 
     try {
@@ -256,6 +265,25 @@ const MedicineFormPage = () => {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Link to Prescription Document (Optional)</label>
+            <select
+              className="form-select"
+              value={selectedPrescriptionId}
+              onChange={(e) => setSelectedPrescriptionId(e.target.value)}
+            >
+              <option value="">None (Self-managed medication)</option>
+              {prescriptions.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.doctorName ? `Dr. ${p.doctorName}` : 'Prescription Document'} — {new Date(p.prescriptionDate).toLocaleDateString()}
+                </option>
+              ))}
+            </select>
+            <small style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.35rem', display: 'block' }}>
+              Linking attaches doctor details and document access to this medication card.
+            </small>
           </div>
 
           <div className="form-group">

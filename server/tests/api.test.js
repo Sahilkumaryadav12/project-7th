@@ -7,13 +7,14 @@ const request = require('supertest');
 const app = require('../server');
 const Medicine = require('../models/Medicine');
 const MedicationLog = require('../models/MedicationLog');
+const Prescription = require('../models/Prescription');
 const User = require('../models/User');
 
 let database;
 beforeAll(async () => {
   database = await MongoMemoryServer.create();
   await mongoose.connect(database.getUri());
-  await Promise.all([User.init(), Medicine.init(), MedicationLog.init()]);
+  await Promise.all([User.init(), Medicine.init(), MedicationLog.init(), Prescription.init()]);
 });
 afterEach(async () => {
   await Promise.all(Object.values(mongoose.connection.collections).map(collection => collection.deleteMany({})));
@@ -80,5 +81,50 @@ describe('MediTrack API', () => {
     expect(dashboard.body).toHaveProperty('weeklyCompliance');
     const report = await agent.get('/api/reports/weekly').expect(200);
     expect(report.body.days).toHaveLength(7);
+  });
+
+  test('manages medicines from prescriptions and attaches them to prescription lists', async () => {
+    const agent = request.agent(app);
+    const userRes = await agent.post('/api/auth/register').send({ name: 'Prescription Patient', email: 'rx@example.com', password: 'SafePass123!' }).expect(201);
+    
+    // Create prescription directly in DB
+    const prescription = await Prescription.create({
+      userId: userRes.body.user._id,
+      doctorName: 'Sarah Smith',
+      prescriptionDate: new Date(),
+      fileUrl: 'private/test-doc.pdf',
+      fileType: 'pdf',
+      notes: 'Take with food for 7 days',
+    });
+
+    // Bulk add medicines from this prescription
+    const bulkRes = await agent.post('/api/medicines/bulk').send({
+      prescriptionId: prescription._id.toString(),
+      medicines: [
+        {
+          name: 'Amoxicillin',
+          dosage: '500mg',
+          frequency: 'twice_daily',
+          startDate: '2026-02-01',
+          reminderTimes: ['08:00', '20:00'],
+          foodInstruction: 'after_food',
+        },
+      ],
+    }).expect(201);
+
+    expect(bulkRes.body).toHaveLength(1);
+    expect(bulkRes.body[0].name).toBe('Amoxicillin');
+
+    // Verify medicine list includes populated prescription info
+    const medList = await agent.get('/api/medicines').expect(200);
+    const addedMed = medList.body.find(m => m.name === 'Amoxicillin');
+    expect(addedMed).toBeTruthy();
+    expect(addedMed.prescription.doctorName).toBe('Sarah Smith');
+
+    // Verify prescriptions list includes attached medicines
+    const rxList = await agent.get('/api/prescriptions').expect(200);
+    expect(rxList.body).toHaveLength(1);
+    expect(rxList.body[0].medicines).toHaveLength(1);
+    expect(rxList.body[0].medicines[0].name).toBe('Amoxicillin');
   });
 });

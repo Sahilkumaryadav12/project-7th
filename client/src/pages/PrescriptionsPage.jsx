@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getPrescriptions, uploadPrescription, deletePrescription, addPrescriptionMedicinesToTracker } from '../services/prescriptionService';
 import { readPrescription } from '../services/prescriptionOcr';
+import { getFileUrl } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import EmptyState from '../components/EmptyState';
 import Modal from '../components/Modal';
@@ -45,6 +46,7 @@ const PrescriptionsPage = () => {
   const [rawOcrText, setRawOcrText] = useState('');
   const [ocrStatus, setOcrStatus] = useState('');
   const [scanNotice, setScanNotice] = useState('');
+  const [reviewNotice, setReviewNotice] = useState('');
   const [reviewError, setReviewError] = useState('');
   const [importing, setImporting] = useState(false);
 
@@ -62,6 +64,14 @@ const PrescriptionsPage = () => {
   useEffect(() => {
     fetchList();
   }, []);
+
+  const handleOpenAddMedicines = (p) => {
+    setReviewPrescription(p);
+    setSuggestions([emptySuggestion()]);
+    setReviewNotice(`Add medicines prescribed by ${p.doctorName ? `Dr. ${p.doctorName}` : 'Doctor'} directly into your tracker.`);
+    setReviewError('');
+    setRawOcrText('');
+  };
 
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
@@ -94,7 +104,7 @@ const PrescriptionsPage = () => {
     }
 
     try {
-      setOcrStatus('Reading the prescription...');
+      setOcrStatus('Scanning prescription document for medicines...');
       setScanNotice('');
       const result = await readPrescription(file, progress => {
         const percent = Math.round((progress.progress || 0) * 100);
@@ -104,16 +114,20 @@ const PrescriptionsPage = () => {
       if (result.candidates.length > 0) {
         setSuggestions(result.candidates);
         setReviewPrescription(uploadedPrescription);
+        setReviewNotice(`Detected ${result.candidates.length} medication(s) from your prescription. Please confirm the details below to add them to your tracker.`);
         setReviewError('');
       } else {
-        setScanNotice('The file was uploaded, but no medication lines were detected. You can add each medicine manually from the prescription card.');
+        setSuggestions([emptySuggestion()]);
+        setReviewPrescription(uploadedPrescription);
+        setReviewNotice('Prescription uploaded! No medication text was automatically detected from this file (common for photos or handwritten notes). Enter the prescribed medicines below to track them.');
+        setReviewError('');
       }
     } catch (scanError) {
       console.error('[PrescriptionsPage] Prescription text extraction failed:', scanError);
-      const reason = scanError instanceof Error && scanError.message
-        ? ` (${scanError.message.slice(0, 180)})`
-        : '';
-      setScanNotice(`The prescription was uploaded, but automatic reading failed${reason}. Open its card to add medicines manually.`);
+      setSuggestions([emptySuggestion()]);
+      setReviewPrescription(uploadedPrescription);
+      setReviewNotice('Prescription uploaded! Automatic text scanner could not read this document format, but you can enter the prescribed medicines below to track them.');
+      setReviewError('');
     } finally {
       setOcrStatus('');
       setSubmitting(false);
@@ -124,6 +138,12 @@ const PrescriptionsPage = () => {
     setSuggestions(current => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item));
   };
 
+  const normalizeReminderTime = (time) => {
+    const trimmed = String(time).trim();
+    if (/^\d:[0-5]\d$/.test(trimmed)) return `0${trimmed}`;
+    return trimmed;
+  };
+
   const handleImportDetected = async () => {
     if (!reviewPrescription) return;
     const selected = suggestions.filter(item => item.selected);
@@ -131,23 +151,31 @@ const PrescriptionsPage = () => {
       setReviewError('Select at least one medication to add.');
       return;
     }
-    if (selected.some(item => !item.name.trim() || !item.dosage.trim() || !item.startDate || item.reminderTimes.length === 0)) {
-      setReviewError('Each selected medicine needs a name, dosage, start date, and at least one reminder time.');
-      return;
-    }
-    if (selected.some(item => item.reminderTimes.some(time => !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)))) {
-      setReviewError('Reminder times must use 24-hour HH:mm format, for example 08:30.');
+    if (selected.some(item => !item.name?.trim() || !item.dosage?.trim() || !item.startDate)) {
+      setReviewError('Each selected medicine needs a name, dosage, and start date.');
       return;
     }
 
     setImporting(true);
     setReviewError('');
     try {
-      const medicines = selected.map(({ selected: _selected, ...item }) => ({
-        ...item,
-        reminderTimes: item.reminderTimes.filter(Boolean),
-      }));
+      const medicines = selected.map(({ selected: _selected, ...item }) => {
+        let times = (item.reminderTimes || [])
+          .map(normalizeReminderTime)
+          .filter(t => /^([01]\d|2[0-3]):[0-5]\d$/.test(t));
+        if (times.length === 0) {
+          times = defaultTimes[item.frequency] || ['08:00'];
+        }
+        return {
+          ...item,
+          name: item.name.trim(),
+          dosage: item.dosage.trim(),
+          reminderTimes: [...new Set(times)],
+        };
+      });
+
       await addPrescriptionMedicinesToTracker(reviewPrescription._id, medicines);
+      await fetchList();
       setReviewPrescription(null);
       setSuggestions([]);
       navigate('/medicines');
@@ -232,27 +260,94 @@ const PrescriptionsPage = () => {
                 {p.notes && <p style={{ fontStyle: 'italic', color: 'var(--text-subtle)', marginTop: '0.2rem' }}>"{p.notes}"</p>}
               </div>
 
-              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+              {/* Linked Medicines In Tracker */}
+              <div style={{
+                background: 'rgba(0, 0, 0, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                padding: '0.75rem',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.45rem',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Pill size={14} color="var(--accent-teal)" />
+                    Medicines in Tracker ({p.medicines?.length || 0})
+                  </span>
+                  {p.medicines && p.medicines.length > 0 && (
+                    <span style={{ fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.15)', padding: '0.15rem 0.5rem', borderRadius: '9999px', fontWeight: 700 }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+
+                {p.medicines && p.medicines.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                    {p.medicines.map((med) => (
+                      <div
+                        key={med._id}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.8rem',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          padding: '0.35rem 0.6rem',
+                          borderRadius: '6px',
+                        }}
+                      >
+                        <span style={{ color: '#fff', fontWeight: 600 }}>
+                          {med.name} <span style={{ color: 'var(--accent-teal)', fontWeight: 400 }}>({med.dosage})</span>
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          style={{ padding: '0.15rem 0.45rem', fontSize: '0.75rem', height: 'auto', color: 'var(--accent-cyan)' }}
+                          onClick={() => navigate(`/medicines/${med._id}`)}
+                        >
+                          View
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', fontStyle: 'italic', margin: 0 }}>
+                    No medicines linked to tracker yet.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
                 <a
-                  href={p.fileUrl}
+                  href={getFileUrl(p.fileUrl)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-secondary btn-sm"
+                  style={{ flex: '1 1 auto', justifyContent: 'center' }}
                 >
                   <ExternalLink size={14} /> View File
                 </a>
 
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <button
-                    onClick={() => navigate('/medicines/new', { state: { prescription: p } })}
-                    className="btn btn-primary btn-sm"
-                  >
-                    <Pill size={14} /> Add to Tracker
-                  </button>
-                  <button onClick={() => setDeleteId(p._id)} className="btn btn-danger btn-sm">
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddMedicines(p)}
+                  className="btn btn-primary btn-sm"
+                  style={{ flex: '1 1 auto', justifyContent: 'center' }}
+                >
+                  <Plus size={14} /> {p.medicines && p.medicines.length > 0 ? 'Add Medicines' : 'Add to Tracker'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDeleteId(p._id)}
+                  className="btn btn-danger btn-sm"
+                  title="Delete Prescription"
+                  aria-label="Delete prescription"
+                  style={{ flex: '0 0 auto', padding: '0.4rem 0.65rem' }}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
           ))}
@@ -332,9 +427,27 @@ const PrescriptionsPage = () => {
         </form>
       </Modal>
 
-      <Modal isOpen={Boolean(reviewPrescription)} onClose={() => !importing && setReviewPrescription(null)} title="Review Detected Medicines">
-        <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>
-          Check every detected name, dose, frequency, and reminder time against the uploaded prescription. OCR can miss or misread details; confirm the schedule before adding anything.
+      <Modal
+        isOpen={Boolean(reviewPrescription)}
+        onClose={() => !importing && setReviewPrescription(null)}
+        maxWidth="760px"
+        title={reviewPrescription?.doctorName ? `Prescription: Dr. ${reviewPrescription.doctorName}` : 'Add Prescription Medicines'}
+      >
+        {reviewNotice && (
+          <div role="status" style={{
+            background: 'rgba(6, 182, 212, 0.12)',
+            border: '1px solid rgba(6, 182, 212, 0.3)',
+            color: 'var(--accent-cyan)',
+            padding: '0.8rem 1rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.875rem',
+            marginBottom: '1rem',
+          }}>
+            {reviewNotice}
+          </div>
+        )}
+        <p style={{ color: 'var(--text-muted)', marginBottom: '1rem', fontSize: '0.875rem' }}>
+          Confirm medicine details and reminder schedules. Once added, these medicines will be tracked on your <strong>My Medications</strong> page with automated dose reminders.
         </p>
         {reviewError && <div role="alert" style={{ color: '#f43f5e', padding: '0.75rem', marginBottom: '1rem', borderRadius: 'var(--radius-md)', background: 'rgba(244, 63, 94, 0.12)' }}>{reviewError}</div>}
 
@@ -349,8 +462,8 @@ const PrescriptionsPage = () => {
                 <button type="button" className="btn btn-danger btn-sm" onClick={() => setSuggestions(current => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove medicine ${index + 1}`}><X size={15} /></button>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem' }}>
-                <div className="form-group"><label className="form-label">Medicine name *</label><input className="form-input" value={item.name} onChange={event => updateSuggestion(index, { name: event.target.value })} /></div>
-                <div className="form-group"><label className="form-label">Dose *</label><input className="form-input" value={item.dosage} placeholder="e.g. 1 tablet, 500 mg" onChange={event => updateSuggestion(index, { dosage: event.target.value })} /></div>
+                <div className="form-group"><label className="form-label">Medicine name *</label><input className="form-input" value={item.name} placeholder="e.g. Amoxicillin" onChange={event => updateSuggestion(index, { name: event.target.value })} /></div>
+                <div className="form-group"><label className="form-label">Dose *</label><input className="form-input" value={item.dosage} placeholder="e.g. 500 mg, 1 tablet" onChange={event => updateSuggestion(index, { dosage: event.target.value })} /></div>
                 <div className="form-group"><label className="form-label">Frequency</label><select className="form-select" value={item.frequency} onChange={event => updateSuggestion(index, { frequency: event.target.value, reminderTimes: defaultTimes[event.target.value] })}>
                   <option value="once_daily">Once daily</option><option value="twice_daily">Twice daily</option><option value="thrice_daily">Three times daily</option><option value="four_times_daily">Four times daily</option><option value="custom">Custom</option>
                 </select></div>
@@ -365,11 +478,18 @@ const PrescriptionsPage = () => {
           ))}
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1rem' }}>
-          <button type="button" className="btn btn-secondary" onClick={() => setSuggestions(current => [...current, emptySuggestion()])} disabled={suggestions.length >= 50}><Plus size={16} /> Add missed medicine</button>
-          <button type="button" className="btn btn-primary" onClick={handleImportDetected} disabled={importing}>
-            <Pill size={16} /> {importing ? 'Adding to tracker…' : `Add ${suggestions.filter(item => item.selected).length} to Tracker`}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginTop: '1.25rem' }}>
+          <button type="button" className="btn btn-secondary" onClick={() => setSuggestions(current => [...current, emptySuggestion()])} disabled={suggestions.length >= 50}>
+            <Plus size={16} /> Add another medicine
           </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button type="button" className="btn btn-ghost" onClick={() => setReviewPrescription(null)} disabled={importing}>
+              Skip / Later
+            </button>
+            <button type="button" className="btn btn-primary" onClick={handleImportDetected} disabled={importing}>
+              <Pill size={16} /> {importing ? 'Adding to tracker…' : `Add ${suggestions.filter(item => item.selected).length} to Tracker`}
+            </button>
+          </div>
         </div>
         {rawOcrText && <details style={{ marginTop: '1rem', color: 'var(--text-muted)' }}><summary style={{ cursor: 'pointer' }}>View extracted text</summary><pre style={{ whiteSpace: 'pre-wrap', maxHeight: '12rem', overflow: 'auto', fontSize: '0.75rem', background: 'rgba(0,0,0,0.2)', padding: '0.75rem', borderRadius: 'var(--radius-md)' }}>{rawOcrText}</pre></details>}
       </Modal>

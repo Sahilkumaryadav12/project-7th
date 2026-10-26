@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { updateProfile } from '../services/userService';
 import { getPatientRelationships, updateRelationshipStatus } from '../services/caregiverService';
 import LoadingSpinner from '../components/LoadingSpinner';
+import { getFileUrl } from '../services/api';
 import { User, Phone, Shield, Camera, Save, Check, X, HeartPulse } from 'lucide-react';
 
 const ProfilePage = () => {
@@ -113,7 +114,7 @@ const ProfilePage = () => {
                 overflow: 'hidden',
               }}>
                 {user?.profileImage ? (
-                  <img src={user.profileImage} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={getFileUrl(user.profileImage)} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
                   user?.name?.charAt(0).toUpperCase()
                 )}

@@ -23,4 +23,17 @@ api.interceptors.response.use(
   }
 );
 
+export const getFileUrl = (path) => {
+  if (!path) return '';
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
+    return path;
+  }
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (apiUrl && !apiUrl.startsWith('/')) {
+    const origin = apiUrl.replace(/\/api\/?$/, '');
+    return `${origin}${path.startsWith('/') ? '' : '/'}${path}`;
+  }
+  return path;
+};
+
 export default api;

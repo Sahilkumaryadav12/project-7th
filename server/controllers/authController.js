@@ -2,7 +2,17 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const cookieOptions = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/', maxAge: 24 * 60 * 60 * 1000 });
+const cookieOptions = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const sameSiteConfig = process.env.COOKIE_SAME_SITE || (isProduction ? 'none' : 'lax');
+  return {
+    httpOnly: true,
+    secure: isProduction || sameSiteConfig === 'none',
+    sameSite: sameSiteConfig,
+    path: '/',
+    maxAge: 24 * 60 * 60 * 1000,
+  };
+};
 const generateToken = (id, role) => jwt.sign({ id, role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '1d' });
 
 const register = async (req, res, next) => {

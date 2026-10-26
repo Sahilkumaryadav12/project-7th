@@ -5,7 +5,7 @@ import { getMedicationLogs } from '../services/logService';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ConfirmationDialog from '../components/ConfirmationDialog';
-import { Pill, ArrowLeft, Clock, Utensils, Award, Edit, Trash2, ShieldAlert } from 'lucide-react';
+import { Pill, ArrowLeft, Clock, Utensils, Award, Edit, Trash2, ShieldAlert, FileText, ExternalLink } from 'lucide-react';
 
 const MedicineDetailPage = () => {
   const { id } = useParams();
@@ -119,8 +119,48 @@ const MedicineDetailPage = () => {
 
         {medicine.notes && (
           <div style={{ marginTop: '1.25rem', background: 'rgba(0,0,0,0.2)', padding: '0.85rem 1rem', borderRadius: '8px', borderLeft: '3px solid var(--accent-primary)' }}>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block' }}>Prescription Notes</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 700, display: 'block' }}>Notes & Instructions</span>
             <p style={{ color: 'var(--text-main)', fontSize: '0.9rem', marginTop: '0.2rem' }}>{medicine.notes}</p>
+          </div>
+        )}
+
+        {medicine.prescription && (
+          <div style={{
+            marginTop: '1.25rem',
+            background: 'rgba(6, 182, 212, 0.08)',
+            border: '1px solid rgba(6, 182, 212, 0.25)',
+            padding: '1rem',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{ background: 'rgba(6, 182, 212, 0.2)', color: 'var(--accent-cyan)', padding: '0.5rem', borderRadius: '8px' }}>
+                <FileText size={20} />
+              </div>
+              <div>
+                <strong style={{ color: '#fff', fontSize: '0.95rem' }}>
+                  {medicine.prescription.doctorName ? `Prescribed by Dr. ${medicine.prescription.doctorName}` : 'From Uploaded Prescription'}
+                </strong>
+                <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Date: {medicine.prescription.prescriptionDate ? new Date(medicine.prescription.prescriptionDate).toLocaleDateString() : 'N/A'}
+                  {medicine.prescription.notes ? ` • Note: "${medicine.prescription.notes}"` : ''}
+                </span>
+              </div>
+            </div>
+            {medicine.prescription.fileUrl && (
+              <a
+                href={medicine.prescription.fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary btn-sm"
+              >
+                <ExternalLink size={14} /> View Original Document
+              </a>
+            )}
           </div>
         )}
       </div>
