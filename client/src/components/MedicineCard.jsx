@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Pill, Clock, Utensils, Edit, Trash2, Award, FileText } from 'lucide-react';
+import { viewPrescriptionFile } from '../services/prescriptionService';
 
 const foodInstructionLabels = {
   before_food: 'Take Before Food',
@@ -83,15 +84,25 @@ const MedicineCard = ({ medicine, onDelete, readOnly = false }) => {
             </span>
           </div>
           {medicine.prescription.fileUrl && (
-            <a
-              href={medicine.prescription.fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--accent-teal)', textDecoration: 'underline', fontSize: '0.75rem', flexShrink: 0 }}
-              onClick={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-teal)',
+                textDecoration: 'underline',
+                fontSize: '0.75rem',
+                flexShrink: 0,
+                cursor: 'pointer',
+                padding: 0,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                viewPrescriptionFile(medicine.prescription._id || medicine.prescriptionId, medicine.prescription.fileType);
+              }}
             >
               View Document
-            </a>
+            </button>
           )}
         </div>
       )}

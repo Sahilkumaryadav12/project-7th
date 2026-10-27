@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getPrescriptions, uploadPrescription, deletePrescription, addPrescriptionMedicinesToTracker } from '../services/prescriptionService';
+import { getPrescriptions, uploadPrescription, deletePrescription, addPrescriptionMedicinesToTracker, viewPrescriptionFile } from '../services/prescriptionService';
 import { readPrescription } from '../services/prescriptionOcr';
 import { getFileUrl } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -319,15 +319,14 @@ const PrescriptionsPage = () => {
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
-                <a
-                  href={getFileUrl(p.fileUrl)}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => viewPrescriptionFile(p._id, p.fileType)}
                   className="btn btn-secondary btn-sm"
                   style={{ flex: '1 1 auto', justifyContent: 'center' }}
                 >
                   <ExternalLink size={14} /> View File
-                </a>
+                </button>
 
                 <button
                   type="button"

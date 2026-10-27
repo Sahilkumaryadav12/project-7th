@@ -11,6 +11,9 @@ const protect = async (req, res, next) => {
     const cookie = req.headers.cookie.split(';').map(value => value.trim()).find(value => value.startsWith('meditrack_session='));
     if (cookie) token = decodeURIComponent(cookie.slice('meditrack_session='.length));
   }
+  if (!token && req.query && req.query.token) {
+    token = req.query.token;
+  }
 
   if (!token) {
     return res.status(401).json({ error: 'Not authorized, token missing' });

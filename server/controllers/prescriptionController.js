@@ -48,6 +48,7 @@ const uploadPrescription = async (req, res, next) => {
     const fileType = ext === 'jpeg' ? 'jpg' : ext;
 
     const fileUrl = `private/${req.file.filename}`;
+    const fileBuffer = fs.readFileSync(req.file.path);
 
     const prescription = await Prescription.create({
       userId: req.user._id,
@@ -55,6 +56,7 @@ const uploadPrescription = async (req, res, next) => {
       prescriptionDate: prescriptionDate || new Date(),
       fileUrl,
       fileType,
+      fileData: fileBuffer,
       notes: notes || '',
     });
 
@@ -111,12 +113,21 @@ const getPrescription = async (req, res, next) => {
 
 const downloadPrescription = async (req, res, next) => {
   try {
-    const prescription = await Prescription.findOne({ _id: req.params.id, userId: req.user._id });
-    if (!prescription) return res.status(404).json({ error: 'Prescription not found' });
-    const filePath = getPrescriptionFilePath(prescription);
-    if (!filePath) {
-      return res.status(404).json({ error: 'Prescription document file not found on server' });
+    let prescription = await Prescription.findOne({ _id: req.params.id, userId: req.user._id }).select('+fileData');
+    if (!prescription && req.user.role === 'caregiver') {
+      const CaregiverRelationship = require('../models/CaregiverRelationship');
+      const candidate = await Prescription.findById(req.params.id).select('+fileData');
+      if (candidate) {
+        const hasAccess = await CaregiverRelationship.exists({
+          caregiverId: req.user._id,
+          patientId: candidate.userId,
+          status: 'accepted',
+        });
+        if (hasAccess) prescription = candidate;
+      }
     }
+    if (!prescription) return res.status(404).json({ error: 'Prescription not found' });
+
     const mimeTypes = {
       pdf: 'application/pdf',
       jpg: 'image/jpeg',
@@ -127,7 +138,17 @@ const downloadPrescription = async (req, res, next) => {
     res.setHeader('Content-Type', mimeTypes[prescription.fileType] || 'application/octet-stream');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Disposition', `inline; filename="prescription-${prescription._id}.${prescription.fileType}"`);
-    res.sendFile(filePath, err => { if (err && !res.headersSent) next(err); });
+
+    const filePath = getPrescriptionFilePath(prescription);
+    if (filePath && fs.existsSync(filePath)) {
+      return res.sendFile(filePath, err => { if (err && !res.headersSent) next(err); });
+    }
+
+    if (prescription.fileData) {
+      return res.send(prescription.fileData);
+    }
+
+    return res.status(404).json({ error: 'Prescription document file not found on server' });
   } catch (err) { next(err); }
 };
 

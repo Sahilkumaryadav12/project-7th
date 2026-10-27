@@ -28,6 +28,10 @@ const prescriptionSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  fileData: {
+    type: Buffer,
+    select: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

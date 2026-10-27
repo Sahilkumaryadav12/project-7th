@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getMedicineById, deleteMedicine } from '../services/medicineService';
 import { getMedicationLogs } from '../services/logService';
+import { viewPrescriptionFile } from '../services/prescriptionService';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ConfirmationDialog from '../components/ConfirmationDialog';
@@ -152,14 +153,13 @@ const MedicineDetailPage = () => {
               </div>
             </div>
             {medicine.prescription.fileUrl && (
-              <a
-                href={medicine.prescription.fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => viewPrescriptionFile(medicine.prescription._id || medicine.prescriptionId, medicine.prescription.fileType)}
                 className="btn btn-secondary btn-sm"
               >
                 <ExternalLink size={14} /> View Original Document
-              </a>
+              </button>
             )}
           </div>
         )}
