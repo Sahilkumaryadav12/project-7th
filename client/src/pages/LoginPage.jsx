@@ -20,13 +20,27 @@ const LoginPage = () => {
 
     try {
       const user = await login(email, password, rememberMe);
-      if (user.role === 'caregiver') {
+      if (user?.role === 'caregiver') {
         navigate('/caregiver');
       } else {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Invalid login credentials. Please try again.');
+      let message = 'Invalid login credentials. Please try again.';
+      if (err.response?.data?.error) {
+        message = err.response.data.error;
+      } else if (err.response?.data?.message) {
+        message = err.response.data.message;
+      } else if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        message = 'Unable to reach backend server. If using Render free tier, the service may be spinning up (~45s). Also check if your backend CORS and database whitelist are configured.';
+      } else if (err.response?.status === 502) {
+        message = 'Backend server returned 502 Bad Gateway. The server failed to connect to MongoDB Atlas (ensure 0.0.0.0/0 is whitelisted in Atlas Network Access).';
+      } else if (err.response?.status === 403) {
+        message = 'Access forbidden: Request origin is not allowed by backend CORS.';
+      } else if (err.message) {
+        message = err.message;
+      }
+      setError(message);
     } finally {
       setSubmitting(false);
     }

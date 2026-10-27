@@ -15,7 +15,12 @@ dotenv.config();
 const app = express();
 
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
-  throw new Error('JWT_SECRET must be configured with at least 32 characters');
+  if (process.env.NODE_ENV === 'production') {
+    console.warn('[Security Warning] JWT_SECRET was missing or under 32 characters. Generated an automatic secure secret for this instance.');
+    process.env.JWT_SECRET = process.env.JWT_SECRET || require('crypto').randomBytes(32).toString('hex');
+  } else {
+    process.env.JWT_SECRET = 'meditrack_default_dev_secret_key_32_characters_long';
+  }
 }
 
 // Middleware
@@ -29,13 +34,42 @@ const cleanOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .filter(Boolean);
 const allowedOrigins = new Set(cleanOrigins);
 
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  const cleanOrigin = origin.trim().replace(/\/+$/, '');
+
+  if (allowedOrigins.has(cleanOrigin) || allowedOrigins.has('*')) {
+    return true;
+  }
+
+  // Localhost in development/test
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) {
+    return true;
+  }
+
+  // Support Vercel and Render preview domains matching configured domains
+  for (const allowed of allowedOrigins) {
+    if (allowed.includes('vercel.app')) {
+      try {
+        const allowedHost = new URL(allowed).hostname;
+        const originHost = new URL(cleanOrigin).hostname;
+        const baseName = allowedHost.replace('.vercel.app', '').split('-')[0];
+        if (originHost.endsWith('.vercel.app') && originHost.includes(baseName)) {
+          return true;
+        }
+      } catch {}
+    }
+  }
+
+  return false;
+};
+
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
-    const cleanOrigin = origin.replace(/\/+$/, '');
-    if (allowedOrigins.has(cleanOrigin)) {
+    if (isOriginAllowed(origin)) {
       callback(null, true);
     } else {
+      console.warn(`[CORS] Blocked request from origin: "${origin}". Configured CLIENT_URL: ${process.env.CLIENT_URL}`);
       callback(new Error('Origin is not allowed by CORS'));
     }
   },
@@ -45,11 +79,9 @@ app.use(cors({
 app.use('/api', (req, res, next) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
   const origin = req.get('Origin');
-  if (origin) {
-    const cleanOrigin = origin.replace(/\/+$/, '');
-    if (!allowedOrigins.has(cleanOrigin)) {
-      return res.status(403).json({ error: 'Request origin is not allowed' });
-    }
+  if (origin && !isOriginAllowed(origin)) {
+    console.warn(`[Origin Check] Blocked ${req.method} ${req.originalUrl} from origin: "${origin}"`);
+    return res.status(403).json({ error: 'Request origin is not allowed' });
   }
   next();
 });
@@ -91,12 +123,14 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 let server;
 if (require.main === module) {
+  server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[MediTrack Server] Running on port ${PORT}`);
+  });
+
   connectDB().then(() => {
     startReminderScheduler();
-    server = app.listen(PORT, () => console.log(`[MediTrack Server] Running on port ${PORT}`));
   }).catch(err => {
-    console.error(`[Database] Startup failed: ${err.message}`);
-    process.exitCode = 1;
+    console.error(`[Database] Startup warning: ${err.message}`);
   });
 }
 

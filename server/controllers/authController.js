@@ -57,6 +57,7 @@ const register = async (req, res, next) => {
 
     res.status(201).json({
       user: userObj,
+      token,
     });
   } catch (err) {
     next(err);
@@ -89,6 +90,7 @@ const login = async (req, res, next) => {
 
     res.status(200).json({
       user: userObj,
+      token,
     });
   } catch (err) {
     next(err);

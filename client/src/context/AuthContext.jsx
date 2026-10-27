@@ -16,14 +16,17 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.removeItem('meditrack_token');
     const verifyUser = async () => {
       try {
         const res = await api.get('/auth/me');
         setUser(res.data.user);
         localStorage.setItem('meditrack_user', JSON.stringify(res.data.user));
         await syncTimezone();
-      } catch { setUser(null); localStorage.removeItem('meditrack_user'); }
+      } catch {
+        setUser(null);
+        localStorage.removeItem('meditrack_user');
+        localStorage.removeItem('meditrack_token');
+      }
       setLoading(false);
     };
 
@@ -32,7 +35,8 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password, rememberMe = true) => {
     const res = await api.post('/auth/login', { email, password, rememberMe });
-    const { user: userData } = res.data;
+    const { user: userData, token } = res.data;
+    if (token) localStorage.setItem('meditrack_token', token);
     setUser(userData);
     localStorage.setItem('meditrack_user', JSON.stringify(userData));
     await syncTimezone();
@@ -41,7 +45,8 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (userData) => {
     const res = await api.post('/auth/register', userData);
-    const { user: newUserData } = res.data;
+    const { user: newUserData, token } = res.data;
+    if (token) localStorage.setItem('meditrack_token', token);
     setUser(newUserData);
     localStorage.setItem('meditrack_user', JSON.stringify(newUserData));
     await syncTimezone();
@@ -56,6 +61,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setUser(null);
       localStorage.removeItem('meditrack_user');
+      localStorage.removeItem('meditrack_token');
     }
   };
 

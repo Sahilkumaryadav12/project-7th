@@ -15,7 +15,13 @@ const connectDB = async () => {
   } catch (primaryError) {
     const developmentMode = (process.env.NODE_ENV || 'development') === 'development';
     const fallbackAllowed = process.env.ALLOW_LOCAL_MONGODB_FALLBACK !== 'false';
-    if (!developmentMode || !fallbackAllowed) throw primaryError;
+    if (!developmentMode || !fallbackAllowed) {
+      console.error('[Database] Connection to configured MongoDB failed:', primaryError.message);
+      if (primaryError.message.includes('whitelist') || primaryError.message.includes('SSL') || primaryError.message.includes('ReplicaSetNoPrimary') || primaryError.name === 'MongooseServerSelectionError') {
+        console.error('[Database] ATLAS IP WHITELIST REQUIRED: In MongoDB Atlas (cloud.mongodb.com), go to Network Access -> Add IP Address -> Allow Access from Anywhere (0.0.0.0/0). Cloud providers like Render require this because their IPs are dynamic.');
+      }
+      throw primaryError;
+    }
 
     const dataPath = path.join(__dirname, '..', 'data', 'mongodb');
     fs.mkdirSync(dataPath, { recursive: true });

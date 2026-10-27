@@ -1,0 +1,11 @@
+{
+  "name": "meditrack-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server/server.js",
+    "build": "npm --prefix server install",
+    "install:server": "npm --prefix server install",
+    "install:client": "npm --prefix client install"
+  }
+}

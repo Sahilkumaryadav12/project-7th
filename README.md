@@ -47,7 +47,7 @@ The API health endpoint is `GET http://localhost:5000/api/health`. Demo seed dat
 
 `server/.env.example` documents `PORT`, `NODE_ENV`, `MONGO_URI`, `ALLOW_LOCAL_MONGODB_FALLBACK`, `JWT_SECRET`, `JWT_EXPIRES_IN`, and `CLIENT_URL`. In development, if configured MongoDB is unreachable, the server can start a local MongoDB process and store its data under `server/data/mongodb`; registered accounts then survive API restarts. Set `ALLOW_LOCAL_MONGODB_FALLBACK=false` to require the configured database. Production always requires the configured MongoDB URI. The server never auto-seeds patient data.
 
-The React client authenticates with an HTTP-only, SameSite strict cookie and does not store the JWT in local storage. Production deployments must use HTTPS and set `CLIENT_URL` to the exact client origin (comma-separated origins are supported).
+The application authenticates seamlessly across domains using both HTTP-only cookies and Authorization Bearer headers (stored in client storage for cross-origin hosting like Vercel + Render). Production deployments must set `CLIENT_URL` on the backend to the frontend origin (e.g. `https://your-app.vercel.app`), and set `VITE_API_URL` on the frontend (e.g. `https://your-server.onrender.com/api`).
 
 Medication reminder times are interpreted in the user's saved IANA timezone and stored as UTC instants alongside the local date key. The missed-dose grace period defaults to 60 minutes and can be configured with `MISSED_DOSE_GRACE_MINUTES`. Prescription files are stored outside the public static directory and streamed only after an ownership check. Profile images are served from the profile-only public directory.
 
