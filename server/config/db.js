@@ -20,6 +20,13 @@ const connectDB = async () => {
       if (primaryError.message.includes('whitelist') || primaryError.message.includes('SSL') || primaryError.message.includes('ReplicaSetNoPrimary') || primaryError.name === 'MongooseServerSelectionError') {
         console.error('[Database] ATLAS IP WHITELIST REQUIRED: In MongoDB Atlas (cloud.mongodb.com), go to Network Access -> Add IP Address -> Allow Access from Anywhere (0.0.0.0/0). Cloud providers like Render require this because their IPs are dynamic.');
       }
+      // Automatically retry connecting in 5 seconds
+      setTimeout(() => {
+        if (mongoose.connection.readyState !== 1) {
+          console.log('[Database] Retrying MongoDB connection...');
+          connectDB().catch(() => {});
+        }
+      }, 5000);
       throw primaryError;
     }
 

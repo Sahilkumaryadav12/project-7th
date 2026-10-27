@@ -97,6 +97,18 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'MediTrack API is running' });
 });
 
+// Database readiness guard for functional API routes
+app.use('/api', (req, res, next) => {
+  const mongoose = require('mongoose');
+  if (mongoose.connection.readyState !== 1) {
+    connectDB().catch(() => {});
+    return res.status(503).json({
+      error: 'Database is unavailable or connecting. In MongoDB Atlas (cloud.mongodb.com), go to Network Access and add 0.0.0.0/0 (Allow Access from Anywhere).',
+    });
+  }
+  next();
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/medicines', require('./routes/medicineRoutes'));

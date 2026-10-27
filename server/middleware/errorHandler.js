@@ -20,9 +20,16 @@ const errorHandler = (err, req, res, next) => {
   } else if (err.message === 'Origin is not allowed by CORS') {
     statusCode = 403;
     message = 'Request origin is not allowed';
+  } else if (
+    err.name === 'MongooseServerSelectionError' ||
+    err.name === 'MongooseError' ||
+    (err.message && (err.message.includes('buffering timed out') || err.message.includes('whitelist') || err.message.includes('SSL')))
+  ) {
+    statusCode = 503;
+    message = 'Database unavailable: In MongoDB Atlas (cloud.mongodb.com), go to Network Access -> Add IP Address -> Allow Access from Anywhere (0.0.0.0/0).';
   }
 
-  if (statusCode >= 500) console.error('[API] Request failed', { method: req.method, path: req.path, error: err.name || 'Error' });
+  if (statusCode >= 500) console.error('[API] Request failed', { method: req.method, path: req.path, error: err.name || 'Error', details: err.message });
 
   res.status(statusCode).json({
     error: message,
